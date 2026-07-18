@@ -1,0 +1,35 @@
+name: LoopKit-Daemon
+options:
+  minimumXcodeGenVersion: 2.38.0
+  deploymentTarget:
+    macOS: "14.0"
+packages:
+  LoopKit:
+    path: ../..
+targets:
+  LoopKitDaemon:
+    type: tool
+    platform: macOS
+    sources:
+      - path: Sources
+    settings:
+      PRODUCT_NAME: loopkitd
+      PRODUCT_BUNDLE_IDENTIFIER: com.example.LoopKit.loopkitd
+      SWIFT_VERSION: 5.10
+      SWIFT_OBJC_INTEROP_MODE: objcxx
+      CODE_SIGN_IDENTITY: "-"
+      # Tool-style targets don't get an Info.plist bundle, but TCC needs the
+      # microphone usage description. CREATE_INFOPLIST_SECTION_IN_BINARY
+      # embeds it into __TEXT,__info_plist.
+      CREATE_INFOPLIST_SECTION_IN_BINARY: YES
+      INFOPLIST_KEY_NSMicrophoneUsageDescription: LoopKit needs microphone access so it can mix your voice with captured app audio.
+    dependencies:
+      - package: LoopKit
+        product: LoopKitDaemonCore
+      - package: LoopKit
+        product: LoopKitIPC
+      - sdk: AppKit.framework
+      - sdk: CoreAudio.framework
+      - sdk: AudioToolbox.framework
+      - sdk: AVFoundation.framework
+      - sdk: CoreMedia.framework
