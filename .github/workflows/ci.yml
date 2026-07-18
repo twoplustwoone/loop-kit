@@ -1,0 +1,76 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  swiftpm:
+    name: Swift modules (swift test)
+    runs-on: macos-14
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and test
+        run: swift test
+
+  engine:
+    name: engine (cmake + ctest)
+    runs-on: macos-14
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S engine -B build -Wno-dev
+      - name: Build
+        run: cmake --build build --parallel
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+      - name: Guard against transport symbols
+        # We dropped the shared-memory transport in the BlackHole pivot.
+        # Fail loudly if any of those symbols come back via a stale source.
+        run: |
+          if nm build/libloopkit_engine.a | grep -E '(lk_transport|loopkit::SharedTransport|loopkit::TransportRing)'; then
+            echo "::error::Transport symbols leaked back into libloopkit_engine.a"
+            exit 1
+          fi
+
+  macos-targets:
+    name: macOS targets (xcodebuild)
+    runs-on: macos-14
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install xcodegen
+        run: brew install xcodegen
+      - name: Generate Xcode projects
+        run: |
+          xcodegen generate --spec macos/Daemon/project.yml   --project macos/Daemon
+          xcodegen generate --spec macos/ControlApp/project.yml --project macos/ControlApp
+      - name: Build daemon
+        run: |
+          xcodebuild \
+            -project macos/Daemon/LoopKit-Daemon.xcodeproj \
+            -scheme LoopKitDaemon \
+            -configuration Debug \
+            -derivedDataPath build/Daemon \
+            -quiet build
+      - name: Build ControlApp
+        run: |
+          xcodebuild \
+            -project macos/ControlApp/LoopKit-ControlApp.xcodeproj \
+            -scheme ControlApp \
+            -configuration Debug \
+            -derivedDataPath build/ControlApp \
+            -quiet build
+
+  loopback-tool:
+    name: loopback test tool (swift build)
+    runs-on: macos-14
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: swift build --package-path tools/loopkit_loopback_test
