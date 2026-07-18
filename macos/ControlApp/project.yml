@@ -1,0 +1,24 @@
+name: LoopKit-ControlApp
+options:
+  minimumXcodeGenVersion: 2.38.0
+  deploymentTarget:
+    macOS: "14.0"
+packages:
+  LoopKit:
+    path: ../..
+targets:
+  ControlApp:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: com.example.LoopKit.ControlApp
+      GENERATE_INFOPLIST_FILE: YES
+      SWIFT_VERSION: 5.10
+      CODE_SIGN_IDENTITY: "-"
+    dependencies:
+      - package: LoopKit
+        product: LoopKitIPC
+      - package: LoopKit
+        product: LoopKitUI
