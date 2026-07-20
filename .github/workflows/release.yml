@@ -1,0 +1,101 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: loopkit-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  signed-dmg:
+    name: Sign, notarize, and publish
+    runs-on: macos-14
+    timeout-minutes: 90
+    environment:
+      name: release
+    env:
+      DEVELOPER_ID_APPLICATION: ${{ secrets.DEVELOPER_ID_APPLICATION }}
+      DEVELOPMENT_TEAM: ${{ secrets.DEVELOPMENT_TEAM }}
+      APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+      APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+      APP_STORE_CONNECT_API_KEY_PATH: ${{ runner.temp }}/AuthKey_LoopKit.p8
+      RELEASE_KEYCHAIN: ${{ runner.temp }}/loopkit-release.keychain-db
+      RELEASE_CERTIFICATE: ${{ runner.temp }}/loopkit-developer-id.p12
+    steps:
+      - name: Check out the tagged source
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify tag and project version
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "${GITHUB_REF_TYPE}" == "tag" ]]
+          [[ "$(git rev-list -n 1 "${GITHUB_REF_NAME}")" == "${GITHUB_SHA}" ]]
+          version="${GITHUB_REF_NAME#v}"
+          project_version="$(sed -n 's/^[[:space:]]*MARKETING_VERSION:[[:space:]]*//p' macos/ControlApp/project.yml | sort -u)"
+          [[ "${version}" == "${project_version}" ]]
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Import release credentials
+        shell: bash
+        env:
+          CERTIFICATE_P12_BASE64: ${{ secrets.CERTIFICATE_P12_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          APP_STORE_CONNECT_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_KEY_BASE64 }}
+        run: |
+          set -euo pipefail
+          printf '%s' "${CERTIFICATE_P12_BASE64}" | /usr/bin/base64 -D -o "${RELEASE_CERTIFICATE}"
+          printf '%s' "${APP_STORE_CONNECT_KEY_BASE64}" | /usr/bin/base64 -D -o "${APP_STORE_CONNECT_API_KEY_PATH}"
+          chmod 600 "${RELEASE_CERTIFICATE}" "${APP_STORE_CONNECT_API_KEY_PATH}"
+
+          security create-keychain -p "${KEYCHAIN_PASSWORD}" "${RELEASE_KEYCHAIN}"
+          security set-keychain-settings -lut 21600 "${RELEASE_KEYCHAIN}"
+          security unlock-keychain -p "${KEYCHAIN_PASSWORD}" "${RELEASE_KEYCHAIN}"
+          security import "${RELEASE_CERTIFICATE}" \
+            -k "${RELEASE_KEYCHAIN}" \
+            -P "${CERTIFICATE_PASSWORD}" \
+            -T /usr/bin/codesign
+          security set-key-partition-list \
+            -S apple-tool:,apple: \
+            -s \
+            -k "${KEYCHAIN_PASSWORD}" \
+            "${RELEASE_KEYCHAIN}"
+          security list-keychains -d user -s "${RELEASE_KEYCHAIN}"
+          security find-identity -v -p codesigning "${RELEASE_KEYCHAIN}"
+
+      - name: Build signed notarized DMG
+        shell: bash
+        run: ./scripts/release.sh "${GITHUB_REF_NAME#v}"
+
+      - name: Publish GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          gh release create "${GITHUB_REF_NAME}" \
+            "dist/LoopKit-${version}.dmg" \
+            "dist/LoopKit-${version}.dmg.sha256" \
+            --verify-tag \
+            --generate-notes \
+            --title "LoopKit ${version}"
+
+      - name: Remove temporary credentials
+        if: always()
+        shell: bash
+        run: |
+          security delete-keychain "${RELEASE_KEYCHAIN}" >/dev/null 2>&1 || true
+          rm -f "${RELEASE_CERTIFICATE}" "${APP_STORE_CONNECT_API_KEY_PATH}"
