@@ -86,18 +86,7 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
   private var schedulerDiscontinuities: UInt64 = 0
   private var lastError: String?
 
-  private var appBusLeft = [Float](repeating: 0, count: Int(kProcessingFrames))
-  private var appBusRight = [Float](repeating: 0, count: Int(kProcessingFrames))
-  private var monitorAppBusLeft = [Float](repeating: 0, count: Int(kProcessingFrames))
-  private var monitorAppBusRight = [Float](repeating: 0, count: Int(kProcessingFrames))
-  private var tapScratchLeft = [Float](repeating: 0, count: Int(kProcessingFrames))
-  private var tapScratchRight = [Float](repeating: 0, count: Int(kProcessingFrames))
-  private var micLeft = [Float](repeating: 0, count: Int(kProcessingFrames))
-  private var micRight = [Float](repeating: 0, count: Int(kProcessingFrames))
-  private var broadcastLeft = [Float](repeating: 0, count: Int(kProcessingFrames))
-  private var broadcastRight = [Float](repeating: 0, count: Int(kProcessingFrames))
-  private var monitorLeft = [Float](repeating: 0, count: Int(kProcessingFrames))
-  private var monitorRight = [Float](repeating: 0, count: Int(kProcessingFrames))
+  private let audioBlocks = AudioBlockStorage(frameCapacity: Int(kProcessingFrames))
 
   public override init() {
     super.init()
@@ -750,61 +739,6 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
     return true
   }
 
-  private func meterForBuffer(
-    sourceID: String,
-    left: [Float],
-    right: [Float],
-    frames: Int,
-    gain: Float,
-    active: Bool
-  ) -> LKXPCMeter {
-    guard active, frames > 0 else {
-      return LKXPCMeter(sourceID: sourceID, peakL: 0, peakR: 0, rmsL: 0, rmsR: 0)
-    }
-
-    var peakL: Float = 0
-    var peakR: Float = 0
-    var sumSqL: Double = 0
-    var sumSqR: Double = 0
-    var clippedL = false
-    var clippedR = false
-    for i in 0..<frames {
-      let l = left[i] * gain
-      let r = right[i] * gain
-      peakL = max(peakL, abs(l))
-      peakR = max(peakR, abs(r))
-      sumSqL += Double(l * l)
-      sumSqR += Double(r * r)
-      clippedL = clippedL || abs(l) > 0.95
-      clippedR = clippedR || abs(r) > 0.95
-    }
-
-    return LKXPCMeter(
-      sourceID: sourceID,
-      peakL: Double(peakL),
-      peakR: Double(peakR),
-      rmsL: sqrt(sumSqL / Double(frames)),
-      rmsR: sqrt(sumSqR / Double(frames)),
-      clippedL: clippedL,
-      clippedR: clippedR
-    )
-  }
-
-  private func mixIntoBus(
-    left: [Float],
-    right: [Float],
-    frames: Int,
-    gain: Float,
-    busLeft: inout [Float],
-    busRight: inout [Float]
-  ) {
-    guard frames > 0 else { return }
-    for i in 0..<frames {
-      busLeft[i] += left[i] * gain
-      busRight[i] += right[i] * gain
-    }
-  }
-
   private func processAudioTickLocked() {
     guard let engine else { return }
 
@@ -818,17 +752,11 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
     let frameCount: UInt32 = blockFrames
     let frameIndex: UInt64 = nextFrameIndex
 
-    zeroStereoBuffers(left: &appBusLeft, right: &appBusRight, frames: Int(frameCount))
-    zeroStereoBuffers(left: &monitorAppBusLeft, right: &monitorAppBusRight, frames: Int(frameCount))
-    zeroStereoBuffers(left: &broadcastLeft, right: &broadcastRight, frames: Int(frameCount))
-    zeroStereoBuffers(left: &monitorLeft, right: &monitorRight, frames: Int(frameCount))
+    audioBlocks.prepare(frames: Int(frameCount))
 
     // Pull the mic lane from AVAudioEngine → AsyncResampler (48 kHz) →
     // engine. On underrun, the resampler zero-fills for us.
-    zeroStereoBuffers(left: &micLeft, right: &micRight, frames: Int(frameCount))
-    _ = withStereoMutableBuffers(left: &micLeft, right: &micRight) { left, right in
-      micInputManager.copyAudioLeft(left, right: right, maxFrames: frameCount)
-    }
+    _ = audioBlocks.captureMicrophone(from: micInputManager, frames: frameCount)
 
     let sourceIDs = visibleSourcesLocked().map(\.id)
     let soloEnabled = sourceIDs.compactMap { sources[$0] }.contains(where: { $0.enabled && !$0.mute && $0.solo })
@@ -838,15 +766,14 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
       let sourceID = Self.sourceID(forBundleID: bundleID)
       guard let source = sources[sourceID] else { continue }
 
-      zeroStereoBuffers(left: &tapScratchLeft, right: &tapScratchRight, frames: Int(frameCount))
-      let tapFrames = withStereoMutableBuffers(left: &tapScratchLeft, right: &tapScratchRight) { left, right in
-        processTapManager.copyAudio(forBundleID: bundleID, left: left, right: right, maxFrames: frameCount)
-      }
+      let tapFrames = audioBlocks.captureApplication(
+        bundleID: bundleID,
+        from: processTapManager,
+        frames: frameCount
+      )
       let active = sourceIsActive(source, soloEnabled: soloEnabled)
-      let meter = meterForBuffer(
+      let meter = audioBlocks.applicationMeter(
         sourceID: sourceID,
-        left: tapScratchLeft,
-        right: tapScratchRight,
         frames: Int(min(frameCount, tapFrames)),
         gain: Float(source.gain),
         active: active
@@ -855,36 +782,26 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
 
       if active, tapFrames > 0 {
         let mixedFrames = Int(min(frameCount, tapFrames))
-        if routeTable.contains(sourceID: sourceID, destinationID: LKRouteDestinationBroadcast) {
-          mixIntoBus(
-            left: tapScratchLeft,
-            right: tapScratchRight,
-            frames: mixedFrames,
-            gain: Float(source.gain),
-            busLeft: &appBusLeft,
-            busRight: &appBusRight
+        audioBlocks.mixCapturedApplication(
+          frames: mixedFrames,
+          gain: Float(source.gain),
+          broadcast: routeTable.contains(
+            sourceID: sourceID,
+            destinationID: LKRouteDestinationBroadcast
+          ),
+          monitor: routeTable.contains(
+            sourceID: sourceID,
+            destinationID: LKRouteDestinationMonitor
           )
-        }
-        if routeTable.contains(sourceID: sourceID, destinationID: LKRouteDestinationMonitor) {
-          mixIntoBus(
-            left: tapScratchLeft,
-            right: tapScratchRight,
-            frames: mixedFrames,
-            gain: Float(source.gain),
-            busLeft: &monitorAppBusLeft,
-            busRight: &monitorAppBusRight
-          )
-        }
+        )
       }
     }
 
     var micActive = false
     if let mic = sources[Self.micSourceID] {
       micActive = sourceIsActive(mic, soloEnabled: soloEnabled)
-      meterMap[Self.micSourceID] = meterForBuffer(
+      meterMap[Self.micSourceID] = audioBlocks.microphoneMeter(
         sourceID: Self.micSourceID,
-        left: micLeft,
-        right: micRight,
         frames: Int(frameCount),
         gain: Float(mic.gain),
         active: micActive
@@ -897,27 +814,14 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
     let micMonitorFrames = micActive
       && routeTable.contains(sourceID: Self.micSourceID, destinationID: LKRouteDestinationMonitor)
       ? frameCount : 0
-    var broadcastMeter = lk_meter_block(peak_l: 0, peak_r: 0, rms_l: 0, rms_r: 0, clipped_l: 0, clipped_r: 0)
-    var monitorMeter = lk_meter_block(peak_l: 0, peak_r: 0, rms_l: 0, rms_r: 0, clipped_l: 0, clipped_r: 0)
-    withAllBuffers { broadcastAppL, broadcastAppR, monitorAppL, monitorAppR, micL, micR, broadcastL, broadcastR, monitorL, monitorR in
-      var broadcastAppIn = lk_input_audio_block(left: broadcastAppL, right: broadcastAppR, frames: frameCount)
-      var broadcastMicIn = lk_input_audio_block(left: micL, right: micR, frames: micBroadcastFrames)
-      var monitorAppIn = lk_input_audio_block(left: monitorAppL, right: monitorAppR, frames: frameCount)
-      var monitorMicIn = lk_input_audio_block(left: micL, right: micR, frames: micMonitorFrames)
-      var broadcastOut = lk_output_audio_block(left: broadcastL, right: broadcastR, frames: frameCount)
-      var monitorOut = lk_output_audio_block(left: monitorL, right: monitorR, frames: frameCount)
-      lk_engine_process_routed(
-        engine,
-        &broadcastAppIn,
-        &broadcastMicIn,
-        &monitorAppIn,
-        &monitorMicIn,
-        &broadcastOut,
-        &monitorOut,
-        &broadcastMeter,
-        &monitorMeter
-      )
-    }
+    let mixMeters = audioBlocks.process(
+      engine: engine,
+      frames: frameCount,
+      microphoneBroadcastFrames: micBroadcastFrames,
+      microphoneMonitorFrames: micMonitorFrames
+    )
+    let broadcastMeter = mixMeters.broadcast
+    let monitorMeter = mixMeters.monitor
     meterMap[LKMeterSourceBroadcastMix] = LKXPCMeter(
       sourceID: LKMeterSourceBroadcastMix,
       peakL: Double(broadcastMeter.peak_l),
@@ -941,16 +845,12 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
     // Discord expects continuous audio even during silence, unlike the
     // idle-stoppable Monitor path.
     if broadcastOutputManager.isRunning() {
-      _ = withStereoMutableBuffers(left: &broadcastLeft, right: &broadcastRight) { left, right in
-        broadcastOutputManager.enqueueLeft(left, right: right, frames: frameCount)
-      }
+      audioBlocks.enqueueBroadcast(to: broadcastOutputManager, frames: frameCount)
     }
 
     updateMonitorLifecycleLocked(mixMeter: monitorMeter)
     if monitorActive {
-      _ = withStereoMutableBuffers(left: &monitorLeft, right: &monitorRight) { left, right in
-        monitorOutputManager.enqueueLeft(left, right: right, frames: frameCount)
-      }
+      audioBlocks.enqueueMonitor(to: monitorOutputManager, frames: frameCount)
     }
 
     if captureWarning == nil && broadcastOutputWarning == nil {
@@ -964,53 +864,6 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
     }
     latestMeters = meterMap.values.sorted {
       $0.sourceID.localizedCaseInsensitiveCompare($1.sourceID) == .orderedAscending
-    }
-  }
-
-  private func zeroStereoBuffers(left: inout [Float], right: inout [Float], frames: Int) {
-    guard frames > 0 else { return }
-    for i in 0..<frames {
-      left[i] = 0
-      right[i] = 0
-    }
-  }
-
-  private func withStereoMutableBuffers<R>(
-    left: inout [Float],
-    right: inout [Float],
-    _ body: (UnsafeMutablePointer<Float>, UnsafeMutablePointer<Float>) -> R
-  ) -> R {
-    left.withUnsafeMutableBufferPointer { leftBuffer in
-      right.withUnsafeMutableBufferPointer { rightBuffer in
-        body(leftBuffer.baseAddress!, rightBuffer.baseAddress!)
-      }
-    }
-  }
-
-  private func withAllBuffers(
-    _ body: (
-      UnsafeMutablePointer<Float>,
-      UnsafeMutablePointer<Float>,
-      UnsafeMutablePointer<Float>,
-      UnsafeMutablePointer<Float>,
-      UnsafeMutablePointer<Float>,
-      UnsafeMutablePointer<Float>,
-      UnsafeMutablePointer<Float>,
-      UnsafeMutablePointer<Float>,
-      UnsafeMutablePointer<Float>,
-      UnsafeMutablePointer<Float>
-    ) -> Void
-  ) {
-    withStereoMutableBuffers(left: &appBusLeft, right: &appBusRight) { appL, appR in
-      withStereoMutableBuffers(left: &monitorAppBusLeft, right: &monitorAppBusRight) { monitorAppL, monitorAppR in
-        withStereoMutableBuffers(left: &micLeft, right: &micRight) { micL, micR in
-          withStereoMutableBuffers(left: &broadcastLeft, right: &broadcastRight) { broadcastL, broadcastR in
-            withStereoMutableBuffers(left: &monitorLeft, right: &monitorRight) { monitorL, monitorR in
-              body(appL, appR, monitorAppL, monitorAppR, micL, micR, broadcastL, broadcastR, monitorL, monitorR)
-            }
-          }
-        }
-      }
     }
   }
 
