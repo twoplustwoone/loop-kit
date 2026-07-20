@@ -1,6 +1,7 @@
 name: LoopKit-ControlApp
 options:
-  minimumXcodeGenVersion: 2.38.0
+  minimumXcodeGenVersion: 2.45.0
+  projectFormat: xcode15_3
   deploymentTarget:
     macOS: "14.2"
 packages:
