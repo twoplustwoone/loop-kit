@@ -16,6 +16,7 @@ private struct StoredRoute: Codable {
 }
 
 private struct StoredScene: Codable {
+  let schemaVersion: Int?
   let name: String
   let masterGain: Double
   let monitorDeviceUID: String
@@ -52,6 +53,7 @@ struct SceneStore {
   ) throws {
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     let stored = StoredScene(
+      schemaVersion: LKXPCScene.currentSchemaVersion,
       name: scene.name,
       masterGain: scene.masterGain,
       monitorDeviceUID: scene.monitorDeviceUID,
@@ -91,6 +93,7 @@ struct SceneStore {
     }
     return LoadedScene(
       scene: LKXPCScene(
+        schemaVersion: stored.schemaVersion ?? 0,
         name: stored.name,
         masterGain: stored.masterGain,
         monitorDeviceUID: stored.monitorDeviceUID,

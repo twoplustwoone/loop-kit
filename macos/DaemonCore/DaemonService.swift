@@ -123,6 +123,24 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
     }
   }
 
+  public func handshake(_ reply: @escaping (LKXPCHandshake) -> Void) {
+    let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+      ?? "development"
+    reply(
+      LKXPCHandshake(
+        protocolVersion: LoopKitIPCProtocolVersion,
+        minimumSupportedVersion: LoopKitIPCMinimumSupportedVersion,
+        daemonVersion: version,
+        capabilities: [
+          LoopKitCapability.processTap,
+          LoopKitCapability.microphonePermission,
+          LoopKitCapability.echoRiskApproval,
+          LoopKitCapability.recentHealth,
+        ]
+      )
+    )
+  }
+
   public func setMasterGain(_ gain: Double, withReply reply: @escaping (LKXPCResult) -> Void) {
     queue.async {
       self.masterGain = ControlPolicy.gain(gain)
@@ -309,6 +327,47 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
       } catch {
         reply(LKXPCResult(success: false, message: error.localizedDescription))
       }
+    }
+  }
+
+  public func requestMicrophoneAccess(_ reply: @escaping (LKXPCResult) -> Void) {
+    maintenanceQueue.async {
+      let granted = self.micInputManager.requestPermissionSync()
+      self.queue.async {
+        if granted {
+          self.applyInputDeviceLocked()
+          reply(LKXPCResult(success: true))
+        } else {
+          self.inputWarning = "Microphone permission denied — enable it in System Settings › Privacy & Security › Microphone."
+          reply(LKXPCResult(success: false, message: self.inputWarning))
+        }
+      }
+    }
+  }
+
+  public func approveEchoRisk(
+    bundleID: String,
+    approved: Bool,
+    withReply reply: @escaping (LKXPCResult) -> Void
+  ) {
+    queue.async {
+      guard RoutingSafetyPolicy.isCommunicationApplication(bundleID) else {
+        reply(LKXPCResult(success: false, message: "\(bundleID) is not a recognized communications app"))
+        return
+      }
+      if approved {
+        self.echoRiskAcknowledgements.insert(bundleID)
+      } else {
+        self.echoRiskAcknowledgements.remove(bundleID)
+        let sourceID = SourceID(applicationBundleID: bundleID)
+        var routes = self.routeTable.xpcRoutes()
+        routes.removeAll {
+          $0.sourceID == sourceID.rawValue && $0.destinationID == RouteDestination.broadcast.rawValue
+        }
+        try? self.routeTable.replace(with: routes)
+      }
+      self.scheduleSessionSaveLocked()
+      reply(LKXPCResult(success: true))
     }
   }
 

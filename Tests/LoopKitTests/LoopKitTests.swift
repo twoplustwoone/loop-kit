@@ -513,5 +513,90 @@ final class LoopKitTests: XCTestCase {
         )
         XCTAssertTrue(decodedMeter.clippedL)
         XCTAssertFalse(decodedMeter.clippedR)
+
+        let handshake = LKXPCHandshake(
+            protocolVersion: LoopKitIPCProtocolVersion,
+            minimumSupportedVersion: LoopKitIPCMinimumSupportedVersion,
+            daemonVersion: "1.2.3",
+            capabilities: [LoopKitCapability.processTap]
+        )
+        let handshakeData = try NSKeyedArchiver.archivedData(
+            withRootObject: handshake,
+            requiringSecureCoding: true
+        )
+        let decodedHandshake = try XCTUnwrap(
+            NSKeyedUnarchiver.unarchivedObject(ofClass: LKXPCHandshake.self, from: handshakeData)
+        )
+        XCTAssertTrue(decodedHandshake.isCompatible())
+        XCTAssertEqual(decodedHandshake.daemonVersion, "1.2.3")
+        XCTAssertEqual(decodedHandshake.capabilities, [LoopKitCapability.processTap])
+        XCTAssertFalse(
+            LKXPCHandshake(
+                protocolVersion: 1,
+                minimumSupportedVersion: 1,
+                daemonVersion: "old",
+                capabilities: []
+            ).isCompatible()
+        )
+
+        let scene = LKXPCScene(
+            name: "Versioned",
+            masterGain: 1,
+            monitorDeviceUID: "system.default",
+            sources: [],
+            routes: []
+        )
+        let sceneData = try NSKeyedArchiver.archivedData(
+            withRootObject: scene,
+            requiringSecureCoding: true
+        )
+        let decodedScene = try XCTUnwrap(
+            NSKeyedUnarchiver.unarchivedObject(ofClass: LKXPCScene.self, from: sceneData)
+        )
+        XCTAssertEqual(decodedScene.schemaVersion, LKXPCScene.currentSchemaVersion)
+
+        let result = LKXPCResult(success: false, message: "reason")
+        let resultData = try NSKeyedArchiver.archivedData(
+            withRootObject: result, requiringSecureCoding: true
+        )
+        XCTAssertEqual(
+            try NSKeyedUnarchiver.unarchivedObject(ofClass: LKXPCResult.self, from: resultData)?.message,
+            "reason"
+        )
+
+        let device = LKXPCDevice(uid: "uid", name: "Device", isDefault: true)
+        let deviceData = try NSKeyedArchiver.archivedData(
+            withRootObject: device, requiringSecureCoding: true
+        )
+        XCTAssertTrue(
+            try XCTUnwrap(
+                NSKeyedUnarchiver.unarchivedObject(ofClass: LKXPCDevice.self, from: deviceData)
+            ).isDefault
+        )
+
+        let route = LKXPCRoute(sourceID: "mic", destinationID: LKRouteDestinationBroadcast)
+        let routeData = try NSKeyedArchiver.archivedData(
+            withRootObject: route, requiringSecureCoding: true
+        )
+        XCTAssertEqual(
+            try NSKeyedUnarchiver.unarchivedObject(ofClass: LKXPCRoute.self, from: routeData)?.destinationID,
+            LKRouteDestinationBroadcast
+        )
+
+        let app = LKXPCCaptureApp(
+            bundleID: "org.mozilla.firefox",
+            displayName: "Firefox",
+            pid: 123,
+            running: true,
+            selected: true,
+            sourceID: "app:org.mozilla.firefox"
+        )
+        let appData = try NSKeyedArchiver.archivedData(
+            withRootObject: app, requiringSecureCoding: true
+        )
+        XCTAssertEqual(
+            try NSKeyedUnarchiver.unarchivedObject(ofClass: LKXPCCaptureApp.self, from: appData)?.pid,
+            123
+        )
     }
 }

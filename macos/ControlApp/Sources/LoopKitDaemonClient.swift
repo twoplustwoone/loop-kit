@@ -22,7 +22,7 @@ actor LoopKitDaemonClient {
     self.stateObserver = observer
   }
 
-  func reconnect() {
+  func reconnect() async {
     notify(.connecting)
     connection?.invalidate()
     let conn = NSXPCConnection(machServiceName: LoopKitDaemonMachService, options: [])
@@ -38,8 +38,28 @@ actor LoopKitDaemonClient {
     conn.resume()
     self.connection = conn
     self.lastDisconnectReason = nil
-    // Optimistically notify connected; a failed first call will re-run the
-    // invalidation handler and correct the state.
+    let handshake: LKXPCHandshake? = await withCheckedContinuation { cont in
+      let proxy = conn.remoteObjectProxyWithErrorHandler { _ in
+        cont.resume(returning: nil)
+      } as? LoopKitDaemonXPCProtocol
+      guard let proxy else {
+        cont.resume(returning: nil)
+        return
+      }
+      proxy.handshake { cont.resume(returning: $0) }
+    }
+    guard let handshake else {
+      conn.invalidate()
+      handleInvalidation(reason: "LoopKit helper did not complete its compatibility handshake")
+      return
+    }
+    guard handshake.isCompatible() else {
+      conn.invalidate()
+      handleInvalidation(
+        reason: "LoopKit protocol mismatch (app \(LoopKitIPCProtocolVersion), helper \(handshake.protocolVersion))"
+      )
+      return
+    }
     notify(.connected)
   }
 
@@ -157,6 +177,22 @@ actor LoopKitDaemonClient {
   }
 
   @discardableResult
+  func requestMicrophoneAccess() async -> LKXPCResult {
+    await call(fallback: LKXPCResult(success: false, message: "Daemon unavailable")) { proxy, cont in
+      proxy.requestMicrophoneAccess { result in cont.resume(returning: result) }
+    }
+  }
+
+  @discardableResult
+  func approveEchoRisk(bundleID: String, approved: Bool) async -> LKXPCResult {
+    await call(fallback: LKXPCResult(success: false, message: "Daemon unavailable")) { proxy, cont in
+      proxy.approveEchoRisk(bundleID: bundleID, approved: approved) { result in
+        cont.resume(returning: result)
+      }
+    }
+  }
+
+  @discardableResult
   func saveScene(_ scene: LKXPCScene) async -> LKXPCResult {
     await call(fallback: LKXPCResult(success: false, message: "Daemon unavailable")) { proxy, cont in
       proxy.saveScene(scene) { result in cont.resume(returning: result) }
@@ -172,9 +208,6 @@ actor LoopKitDaemonClient {
   // MARK: - Private plumbing
 
   private func proxyIfAvailable(onError: @escaping (Error) -> Void) -> LoopKitDaemonXPCProtocol? {
-    if connection == nil {
-      reconnect()
-    }
     guard let connection else { return nil }
     return connection.remoteObjectProxyWithErrorHandler(onError) as? LoopKitDaemonXPCProtocol
   }
@@ -183,7 +216,10 @@ actor LoopKitDaemonClient {
     fallback: T,
     invoke: @escaping (LoopKitDaemonXPCProtocol, CheckedContinuation<T, Never>) -> Void
   ) async -> T {
-    await withCheckedContinuation { (cont: CheckedContinuation<T, Never>) in
+    if connection == nil {
+      await reconnect()
+    }
+    return await withCheckedContinuation { (cont: CheckedContinuation<T, Never>) in
       let onError: (Error) -> Void = { [weak self] error in
         Task { await self?.handleInvalidation(reason: error.localizedDescription) }
         cont.resume(returning: fallback)

@@ -7,6 +7,61 @@ public let LKRouteDestinationMonitor = "monitor"
 public let LKRouteDestinationBroadcast = "broadcast"
 public let LKMeterSourceBroadcastMix = "mix:broadcast"
 public let LKMeterSourceMonitorMix = "mix:monitor"
+public let LoopKitIPCProtocolVersion = 2
+public let LoopKitIPCMinimumSupportedVersion = 2
+
+public enum LoopKitCapability {
+  public static let processTap = "process-tap"
+  public static let microphonePermission = "microphone-permission"
+  public static let echoRiskApproval = "echo-risk-approval"
+  public static let recentHealth = "recent-health"
+}
+
+@objc(LKXPCHandshake)
+@objcMembers
+public final class LKXPCHandshake: NSObject, NSSecureCoding {
+  public static var supportsSecureCoding: Bool = true
+
+  public let protocolVersion: Int
+  public let minimumSupportedVersion: Int
+  public let daemonVersion: String
+  public let capabilities: [String]
+
+  public init(
+    protocolVersion: Int,
+    minimumSupportedVersion: Int,
+    daemonVersion: String,
+    capabilities: [String]
+  ) {
+    self.protocolVersion = protocolVersion
+    self.minimumSupportedVersion = minimumSupportedVersion
+    self.daemonVersion = daemonVersion
+    self.capabilities = capabilities
+  }
+
+  public required init?(coder: NSCoder) {
+    protocolVersion = coder.decodeInteger(forKey: "protocolVersion")
+    minimumSupportedVersion = coder.decodeInteger(forKey: "minimumSupportedVersion")
+    guard let daemonVersion = coder.decodeObject(of: NSString.self, forKey: "daemonVersion") as String?
+    else { return nil }
+    self.daemonVersion = daemonVersion
+    capabilities = coder.decodeArrayOfObjects(ofClass: NSString.self, forKey: "capabilities") as? [String] ?? []
+  }
+
+  public func encode(with coder: NSCoder) {
+    coder.encode(protocolVersion, forKey: "protocolVersion")
+    coder.encode(minimumSupportedVersion, forKey: "minimumSupportedVersion")
+    coder.encode(daemonVersion, forKey: "daemonVersion")
+    coder.encode(capabilities, forKey: "capabilities")
+  }
+
+  public func isCompatible(
+    clientVersion: Int = LoopKitIPCProtocolVersion,
+    clientMinimumSupportedVersion: Int = LoopKitIPCMinimumSupportedVersion
+  ) -> Bool {
+    protocolVersion >= clientMinimumSupportedVersion && clientVersion >= minimumSupportedVersion
+  }
+}
 
 @objc(LKXPCResult)
 @objcMembers
@@ -408,7 +463,9 @@ public final class LKXPCCaptureApp: NSObject, NSSecureCoding {
 @objcMembers
 public final class LKXPCScene: NSObject, NSSecureCoding {
   public static var supportsSecureCoding: Bool = true
+  public static let currentSchemaVersion = 1
 
+  public let schemaVersion: Int
   public let name: String
   public let masterGain: Double
   public let monitorDeviceUID: String
@@ -416,12 +473,14 @@ public final class LKXPCScene: NSObject, NSSecureCoding {
   public let routes: [LKXPCRoute]?
 
   public init(
+    schemaVersion: Int = currentSchemaVersion,
     name: String,
     masterGain: Double,
     monitorDeviceUID: String,
     sources: [LKXPCSourceState],
     routes: [LKXPCRoute]? = nil
   ) {
+    self.schemaVersion = schemaVersion
     self.name = name
     self.masterGain = masterGain
     self.monitorDeviceUID = monitorDeviceUID
@@ -436,6 +495,9 @@ public final class LKXPCScene: NSObject, NSSecureCoding {
     else {
       return nil
     }
+    schemaVersion = coder.containsValue(forKey: "schemaVersion")
+      ? coder.decodeInteger(forKey: "schemaVersion")
+      : 0
     self.name = name
     masterGain = coder.decodeDouble(forKey: "masterGain")
     self.monitorDeviceUID = monitorDeviceUID
@@ -448,6 +510,7 @@ public final class LKXPCScene: NSObject, NSSecureCoding {
   }
 
   public func encode(with coder: NSCoder) {
+    coder.encode(schemaVersion, forKey: "schemaVersion")
     coder.encode(name, forKey: "name")
     coder.encode(masterGain, forKey: "masterGain")
     coder.encode(monitorDeviceUID, forKey: "monitorDeviceUID")
@@ -457,6 +520,7 @@ public final class LKXPCScene: NSObject, NSSecureCoding {
 }
 
 @objc public protocol LoopKitDaemonXPCProtocol {
+  func handshake(_ reply: @escaping (LKXPCHandshake) -> Void)
   func setMasterGain(_ gain: Double, withReply reply: @escaping (LKXPCResult) -> Void)
   func setSourceParams(_ source: LKXPCSourceState, withReply reply: @escaping (LKXPCResult) -> Void)
   func setMuteSolo(sourceID: String, mute: Bool, solo: Bool, enabled: Bool, withReply reply: @escaping (LKXPCResult) -> Void)
@@ -469,6 +533,8 @@ public final class LKXPCScene: NSObject, NSSecureCoding {
   func listSources(_ reply: @escaping ([LKXPCSourceState]) -> Void)
   func listRoutes(_ reply: @escaping ([LKXPCRoute]) -> Void)
   func setRoutes(_ routes: [LKXPCRoute], withReply reply: @escaping (LKXPCResult) -> Void)
+  func requestMicrophoneAccess(_ reply: @escaping (LKXPCResult) -> Void)
+  func approveEchoRisk(bundleID: String, approved: Bool, withReply reply: @escaping (LKXPCResult) -> Void)
   func saveScene(_ scene: LKXPCScene, withReply reply: @escaping (LKXPCResult) -> Void)
   func loadScene(name: String, withReply reply: @escaping (LKXPCScene?, LKXPCResult) -> Void)
   func listScenes(_ reply: @escaping ([String]) -> Void)
@@ -480,6 +546,13 @@ public func configureLoopKitXPCInterface(_ interface: NSXPCInterface) {
   func classSet(_ classes: [AnyClass]) -> Set<AnyHashable> {
     (NSSet(array: classes) as? Set<AnyHashable>) ?? []
   }
+
+  interface.setClasses(
+    classSet([LKXPCHandshake.self, NSArray.self, NSString.self]),
+    for: #selector(LoopKitDaemonXPCProtocol.handshake(_:)),
+    argumentIndex: 0,
+    ofReply: true
+  )
 
   interface.setClasses(
     classSet([LKXPCSourceState.self]),
@@ -499,6 +572,27 @@ public func configureLoopKitXPCInterface(_ interface: NSXPCInterface) {
     argumentIndex: 0,
     ofReply: true
   )
+
+  let resultReplies: [(Selector, Int)] = [
+    (#selector(LoopKitDaemonXPCProtocol.setMasterGain(_:withReply:)), 0),
+    (#selector(LoopKitDaemonXPCProtocol.setSourceParams(_:withReply:)), 0),
+    (#selector(LoopKitDaemonXPCProtocol.setMuteSolo(sourceID:mute:solo:enabled:withReply:)), 0),
+    (#selector(LoopKitDaemonXPCProtocol.setMonitorDevice(uid:withReply:)), 0),
+    (#selector(LoopKitDaemonXPCProtocol.setInputDevice(uid:withReply:)), 0),
+    (#selector(LoopKitDaemonXPCProtocol.setCapturedApps(bundleIDs:withReply:)), 0),
+    (#selector(LoopKitDaemonXPCProtocol.setRoutes(_:withReply:)), 0),
+    (#selector(LoopKitDaemonXPCProtocol.requestMicrophoneAccess(_:)), 0),
+    (#selector(LoopKitDaemonXPCProtocol.approveEchoRisk(bundleID:approved:withReply:)), 0),
+    (#selector(LoopKitDaemonXPCProtocol.saveScene(_:withReply:)), 0),
+  ]
+  for (selector, index) in resultReplies {
+    interface.setClasses(
+      classSet([LKXPCResult.self]),
+      for: selector,
+      argumentIndex: index,
+      ofReply: true
+    )
+  }
   interface.setClasses(
     classSet([NSArray.self, LKXPCDevice.self]),
     for: #selector(LoopKitDaemonXPCProtocol.listInputDevices(_:)),
