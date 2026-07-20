@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="cable" x1="220" y1="250" x2="850" y2="780" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#43E7FF"/>
+      <stop offset="0.48" stop-color="#1ACFE4"/>
+      <stop offset="1" stop-color="#18D8B3"/>
+    </linearGradient>
+  </defs>
+  <path d="M330 340 C190 330 120 430 150 570 C180 720 330 760 470 650 C600 550 600 350 740 320 C880 290 940 430 895 570 C850 710 745 740 690 700" fill="none" stroke="#062A31" stroke-width="112" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M330 340 C190 330 120 430 150 570 C180 720 330 760 470 650 C600 550 600 350 740 320 C880 290 940 430 895 570 C850 710 745 740 690 700" fill="none" stroke="url(#cable)" stroke-width="78" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

@@ -97,7 +97,11 @@ private struct DashboardTopBar: View {
   var body: some View {
     HStack(spacing: 14) {
       HStack(spacing: 9) {
-        Image(systemName: "infinity")
+        Image("LoopKitMenuTemplate")
+          .renderingMode(.template)
+          .resizable()
+          .scaledToFit()
+          .frame(width: 22, height: 22)
           .font(.system(size: 18, weight: .bold))
           .foregroundStyle(LoopKitTheme.teal)
         Text("LoopKit")

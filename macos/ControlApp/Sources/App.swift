@@ -27,8 +27,12 @@ struct LoopKitApp: App {
 #endif
     }
 
-    MenuBarExtra("LoopKit", systemImage: "infinity") {
+    MenuBarExtra {
       MenuBarControllerView(model: model)
+    } label: {
+      Image("LoopKitMenuTemplate")
+        .renderingMode(.template)
+        .accessibilityLabel("LoopKit")
     }
     .menuBarExtraStyle(.window)
   }

@@ -54,8 +54,11 @@ struct MenuBarControllerView: View {
 
   private var header: some View {
     HStack(spacing: 9) {
-      Image(systemName: "infinity")
-        .font(.system(size: 18, weight: .bold))
+      Image("LoopKitMenuTemplate")
+        .renderingMode(.template)
+        .resizable()
+        .scaledToFit()
+        .frame(width: 22, height: 22)
         .foregroundStyle(LoopKitTheme.teal)
       Text("LoopKit")
         .font(.system(size: 18, weight: .bold))
