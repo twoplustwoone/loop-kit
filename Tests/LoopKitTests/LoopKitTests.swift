@@ -225,6 +225,48 @@ final class LoopKitTests: XCTestCase {
         XCTAssertNil(loaded.scene.routes)
     }
 
+    func testSessionStoreRoundTripAndSchemaVersion() throws {
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LoopKitSessionTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let store = SessionStore(file: folder.appendingPathComponent("state.json"))
+        let state = LoopKitSessionState(
+            masterGain: 0.75,
+            sources: [
+                SessionSourceState(
+                    id: "mic", displayName: "Microphone", gain: 0.5,
+                    mute: false, solo: true, enabled: true
+                )
+            ],
+            selectedApplicationBundleIDs: ["org.mozilla.firefox"],
+            routes: [SessionRoute(sourceID: "mic", destinationID: LKRouteDestinationBroadcast)],
+            monitorDeviceUID: "speaker.uid",
+            inputDeviceUID: "microphone.uid",
+            echoRiskAcknowledgements: ["com.hnc.Discord"]
+        )
+
+        try store.write(state)
+
+        XCTAssertEqual(try store.read(), state)
+        let json = try JSONSerialization.jsonObject(with: Data(contentsOf: store.file)) as? [String: Any]
+        XCTAssertEqual(json?["schemaVersion"] as? Int, LoopKitSessionState.currentSchemaVersion)
+    }
+
+    func testSessionStoreQuarantinesCorruptState() throws {
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LoopKitSessionTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let store = SessionStore(file: folder.appendingPathComponent("state.json"))
+        try Data("not-json".utf8).write(to: store.file)
+
+        XCTAssertThrowsError(try store.read())
+        let quarantined = try XCTUnwrap(try store.quarantineCorruptFile(now: Date(timeIntervalSince1970: 0)))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: store.file.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: quarantined.path))
+        XCTAssertTrue(quarantined.lastPathComponent.hasPrefix("state.corrupt-"))
+    }
+
     func testRouteTableDefaultsNewSourcesAndReplacesAtomically() throws {
         var table = RouteTable()
         table.reconcile(sourceIDs: ["mic", "app:player"])

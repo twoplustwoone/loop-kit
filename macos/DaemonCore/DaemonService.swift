@@ -26,6 +26,7 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
     qos: .utility
   )
   private let sceneStore = SceneStore(folder: SceneStore.defaultFolder)
+  private let sessionStore = SessionStore(file: SessionStore.defaultFile)
   private let processTapManager = LKProcessTapManager(maxFrames: kProcessingFrames)
   private let monitorOutputManager = LKAudioOutputRouter(
     label: "Monitor", sampleRate: 48_000, maxFrames: kProcessingFrames
@@ -85,12 +86,22 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
   )
   private var schedulerDiscontinuities: UInt64 = 0
   private var lastError: String?
+  private var echoRiskAcknowledgements: Set<String> = []
+  private lazy var sessionWriter = DebouncedSessionWriter(queue: queue) { [weak self] state in
+    guard let self else { return }
+    do {
+      try self.sessionStore.write(state)
+    } catch {
+      self.lastError = "Could not save LoopKit state: \(error.localizedDescription)"
+    }
+  }
 
   private let audioBlocks = AudioBlockStorage(frameCapacity: Int(kProcessingFrames))
 
   public override init() {
     super.init()
     queue.sync {
+      restoreSessionLocked()
       ensureCoreSourcesLocked()
       bootstrapDSP()
       startProcessingLoop()
@@ -99,6 +110,7 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
   }
 
   deinit {
+    sessionWriter.cancel()
     processingTimer?.cancel()
     processingTimer = nil
     maintenanceTimer?.cancel()
@@ -115,6 +127,7 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
     queue.async {
       self.masterGain = ControlPolicy.gain(gain)
       self.syncEngineStateLocked()
+      self.scheduleSessionSaveLocked()
       reply(LKXPCResult(success: true))
     }
   }
@@ -123,6 +136,7 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
     queue.async {
       self.sources[source.id] = self.sanitizedSource(source)
       self.syncEngineStateLocked()
+      self.scheduleSessionSaveLocked()
       reply(LKXPCResult(success: true))
     }
   }
@@ -138,6 +152,7 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
       current.enabled = enabled
       self.sources[sourceID] = current
       self.syncEngineStateLocked()
+      self.scheduleSessionSaveLocked()
       reply(LKXPCResult(success: true))
     }
   }
@@ -152,6 +167,7 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
       self.requestedMonitorDeviceUID = uid
       let switched = self.applyMonitorDeviceLocked(preferredUID: uid, allowFallback: true, reason: "manual switch")
       if switched {
+        self.scheduleSessionSaveLocked()
         reply(LKXPCResult(success: true, message: self.monitorFallbackActive ? self.monitorWarning : nil))
       } else {
         reply(LKXPCResult(success: false, message: self.monitorWarning ?? "Failed to set monitor output device"))
@@ -190,6 +206,7 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
       }
       self.requestedInputDeviceUID = uid
       self.applyInputDeviceLocked()
+      self.scheduleSessionSaveLocked()
       reply(LKXPCResult(success: self.inputWarning == nil, message: self.inputWarning))
     }
   }
@@ -245,6 +262,7 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
       self.processTapManager.setSelectedBundleIDs(sanitized)
       self.ensureCaptureSourcesLocked()
       self.requestTapReconcile()
+      self.scheduleSessionSaveLocked()
       reply(LKXPCResult(success: true))
     }
   }
@@ -267,6 +285,7 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
       self.ensureCaptureSourcesLocked()
       do {
         try self.routeTable.replace(with: routes)
+        self.scheduleSessionSaveLocked()
         reply(LKXPCResult(success: true))
       } catch {
         reply(LKXPCResult(success: false, message: error.localizedDescription))
@@ -316,6 +335,7 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
         self.syncEngineStateLocked()
         self.requestTapReconcile()
         _ = self.applyMonitorDeviceLocked(preferredUID: self.requestedMonitorDeviceUID, allowFallback: true, reason: "scene load")
+        self.scheduleSessionSaveLocked()
         reply(scene, LKXPCResult(success: true))
       } catch {
         reply(nil, LKXPCResult(success: false, message: error.localizedDescription))
@@ -384,6 +404,70 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
 
   private static func sourceID(forBundleID bundleID: String) -> String {
     "\(appSourcePrefix)\(bundleID)"
+  }
+
+  private func sessionSnapshotLocked() -> LoopKitSessionState {
+    LoopKitSessionState(
+      masterGain: masterGain,
+      sources: sources.values.sorted { $0.id < $1.id }.map {
+        SessionSourceState(
+          id: $0.id,
+          displayName: $0.displayName,
+          gain: $0.gain,
+          mute: $0.mute,
+          solo: $0.solo,
+          enabled: $0.enabled
+        )
+      },
+      selectedApplicationBundleIDs: capturedAppBundleIDs,
+      routes: routeTable.xpcRoutes().map {
+        SessionRoute(sourceID: $0.sourceID, destinationID: $0.destinationID)
+      },
+      monitorDeviceUID: requestedMonitorDeviceUID,
+      inputDeviceUID: requestedInputDeviceUID,
+      echoRiskAcknowledgements: echoRiskAcknowledgements.sorted()
+    )
+  }
+
+  private func scheduleSessionSaveLocked() {
+    sessionWriter.schedule(sessionSnapshotLocked())
+  }
+
+  private func restoreSessionLocked() {
+    do {
+      guard let state = try sessionStore.read() else { return }
+      masterGain = ControlPolicy.gain(state.masterGain)
+      requestedMonitorDeviceUID = state.monitorDeviceUID
+      requestedInputDeviceUID = state.inputDeviceUID
+      capturedAppBundleIDs = Self.sanitizedBundleIDs(state.selectedApplicationBundleIDs)
+      sources = Dictionary(uniqueKeysWithValues: state.sources.map { stored in
+        let source = LKXPCSourceState(
+          id: stored.id,
+          displayName: stored.displayName,
+          gain: stored.gain,
+          mute: stored.mute,
+          solo: stored.solo,
+          enabled: stored.enabled
+        )
+        return (stored.id, sanitizedSource(source))
+      })
+      processTapManager.setSelectedBundleIDs(capturedAppBundleIDs)
+      ensureCaptureSourcesLocked()
+      routeTable.restore(
+        state.routes.map { LKXPCRoute(sourceID: $0.sourceID, destinationID: $0.destinationID) },
+        sourceIDs: Set(sources.keys)
+      )
+      echoRiskAcknowledgements = Set(state.echoRiskAcknowledgements)
+    } catch {
+      let originalError = error
+      do {
+        let quarantined = try sessionStore.quarantineCorruptFile()
+        let suffix = quarantined.map { " Quarantined as \($0.lastPathComponent)." } ?? ""
+        lastError = "LoopKit state was unreadable and defaults were restored.\(suffix) \(originalError.localizedDescription)"
+      } catch {
+        lastError = "LoopKit state was unreadable and could not be quarantined: \(error.localizedDescription)"
+      }
+    }
   }
 
   private func cloneSource(_ source: LKXPCSourceState) -> LKXPCSourceState {
