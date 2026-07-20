@@ -38,8 +38,12 @@ public enum LoopKitCodeSigningRequirement {
   public static let appIdentifier = "com.twoplustwoone.LoopKit"
   public static let agentIdentifier = "com.twoplustwoone.LoopKit.agent"
 
-  public static func debug(identifier: String) -> String {
+  public static func identifierOnly(identifier: String) -> String {
     "identifier \"\(identifier)\""
+  }
+
+  public static func debug(identifier: String) -> String {
+    identifierOnly(identifier: identifier)
   }
 
   public static func release(identifier: String, teamIdentifier: String?) -> String? {

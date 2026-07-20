@@ -2,7 +2,7 @@
 set -euo pipefail
 
 if [[ $# -lt 1 || $# -gt 2 ]]; then
-  echo "usage: $0 LoopKit.app [LoopKit.dmg]" >&2
+  echo "usage: $0 LoopKit.app [LoopKit-Community.dmg]" >&2
   exit 64
 fi
 
@@ -13,7 +13,7 @@ AGENT_PLIST="${APP_PATH}/Contents/Library/LaunchAgents/com.twoplustwoone.LoopKit
 APP_PLIST="${APP_PATH}/Contents/Info.plist"
 APP_BINARY="${APP_PATH}/Contents/MacOS/LoopKit"
 
-fail() { echo "[release validation] $*" >&2; exit 1; }
+fail() { echo "[community release validation] $*" >&2; exit 1; }
 check_equal() {
   [[ "$1" == "$2" ]] || fail "expected '$2', got '$1'"
 }
@@ -51,26 +51,14 @@ app_details="$(/usr/bin/codesign -dvvv "$APP_PATH" 2>&1)"
 helper_details="$(/usr/bin/codesign -dvvv "$HELPER_PATH" 2>&1)"
 grep -q '^Identifier=com.twoplustwoone.LoopKit$' <<<"$app_details" || fail "app signing identifier mismatch"
 grep -q '^Identifier=com.twoplustwoone.LoopKit.agent$' <<<"$helper_details" || fail "helper signing identifier mismatch"
+grep -q '^Signature=adhoc$' <<<"$app_details" || fail "app is not ad-hoc signed"
+grep -q '^Signature=adhoc$' <<<"$helper_details" || fail "helper is not ad-hoc signed"
 grep -q 'flags=.*runtime' <<<"$app_details" || fail "app hardened runtime missing"
 grep -q 'flags=.*runtime' <<<"$helper_details" || fail "helper hardened runtime missing"
 
-app_team="$(sed -n 's/^TeamIdentifier=//p' <<<"$app_details")"
-helper_team="$(sed -n 's/^TeamIdentifier=//p' <<<"$helper_details")"
-[[ -n "$app_team" && "$app_team" == "$helper_team" ]] || fail "app/helper Team IDs do not match"
-
-app_requirement="$(/usr/bin/codesign -d -r- "$APP_PATH" 2>&1)"
-helper_requirement="$(/usr/bin/codesign -d -r- "$HELPER_PATH" 2>&1)"
-grep -q 'anchor apple generic' <<<"$app_requirement" || fail "app requirement lacks Apple anchor"
-grep -q "subject.OU.*${app_team}" <<<"$app_requirement" || fail "app requirement lacks Team ID"
-grep -q 'anchor apple generic' <<<"$helper_requirement" || fail "helper requirement lacks Apple anchor"
-grep -q "subject.OU.*${app_team}" <<<"$helper_requirement" || fail "helper requirement lacks Team ID"
-
 if [[ -n "$DMG_PATH" ]]; then
   [[ -f "$DMG_PATH" ]] || fail "DMG not found: $DMG_PATH"
-  /usr/bin/codesign --verify --strict "$DMG_PATH" || fail "DMG signature invalid"
-  /usr/bin/xcrun stapler validate "$DMG_PATH" || fail "notarization ticket is not stapled"
-  /usr/sbin/spctl --assess --type open --context context:primary-signature --verbose=2 "$DMG_PATH" \
-    || fail "Gatekeeper rejected DMG"
+  /usr/bin/hdiutil verify "$DMG_PATH" || fail "DMG verification failed"
 fi
 
-echo "Release validation passed"
+echo "Community release validation passed (Gatekeeper trust is intentionally not claimed)"

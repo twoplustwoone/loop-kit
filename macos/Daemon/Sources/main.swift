@@ -21,9 +21,9 @@ final class LoopKitDaemonDelegate: NSObject, NSXPCListenerDelegate {
 
 let delegate = LoopKitDaemonDelegate()
 let listener = NSXPCListener(machServiceName: LoopKitDaemonMachService)
-#if DEBUG
+#if DEBUG || LOOPKIT_COMMUNITY
 listener.setConnectionCodeSigningRequirement(
-  LoopKitCodeSigningRequirement.debug(identifier: LoopKitCodeSigningRequirement.appIdentifier)
+  LoopKitCodeSigningRequirement.identifierOnly(identifier: LoopKitCodeSigningRequirement.appIdentifier)
 )
 #else
 let teamIdentifier = Bundle.main.object(forInfoDictionaryKey: "LoopKitTeamIdentifier") as? String

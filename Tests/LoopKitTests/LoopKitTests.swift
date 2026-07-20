@@ -13,6 +13,12 @@ final class LoopKitTests: XCTestCase {
             LoopKitCodeSigningRequirement.debug(identifier: LoopKitCodeSigningRequirement.appIdentifier),
             "identifier \"com.twoplustwoone.LoopKit\""
         )
+        XCTAssertEqual(
+            LoopKitCodeSigningRequirement.identifierOnly(
+                identifier: LoopKitCodeSigningRequirement.agentIdentifier
+            ),
+            "identifier \"com.twoplustwoone.LoopKit.agent\""
+        )
         XCTAssertNil(
             LoopKitCodeSigningRequirement.release(
                 identifier: LoopKitCodeSigningRequirement.agentIdentifier,

@@ -26,9 +26,9 @@ actor LoopKitDaemonClient {
     notify(.connecting)
     connection?.invalidate()
     let conn = NSXPCConnection(machServiceName: LoopKitDaemonMachService, options: [])
-#if DEBUG
+#if DEBUG || LOOPKIT_COMMUNITY
     conn.setCodeSigningRequirement(
-      LoopKitCodeSigningRequirement.debug(identifier: LoopKitCodeSigningRequirement.agentIdentifier)
+      LoopKitCodeSigningRequirement.identifierOnly(identifier: LoopKitCodeSigningRequirement.agentIdentifier)
     )
 #else
     let teamIdentifier = Bundle.main.object(forInfoDictionaryKey: "LoopKitTeamIdentifier") as? String
