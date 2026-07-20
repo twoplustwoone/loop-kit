@@ -110,13 +110,17 @@ final class LoopKitDaemonRuntime {
       self.started = true
       self.lifecycle = LKRuntimeLifecycleStarting
       self.restoreSessionLocked()
+      self.refreshMicrophonePermissionLocked()
       self.ensureCoreSourcesLocked()
       self.bootstrapDSP()
+      if self.microphonePermission == LKPermissionStateGranted {
+        self.applyInputDeviceLocked()
+      }
       self.startProcessingLoop()
       self.startMaintenanceLoop()
       if self.engine == nil {
         self.lifecycle = LKRuntimeLifecycleFailed
-      } else if self.broadcastOutputWarning != nil || self.captureWarning != nil {
+      } else if self.broadcastOutputWarning != nil || self.captureWarning != nil || self.inputWarning != nil {
         self.lifecycle = LKRuntimeLifecycleDegraded
       } else {
         self.lifecycle = LKRuntimeLifecycleReady
@@ -753,6 +757,19 @@ final class LoopKitDaemonRuntime {
       _ = applyMonitorDeviceLocked(preferredUID: requestedMonitorDeviceUID, allowFallback: true, reason: "startup")
     }
     applyBroadcastOutputLocked(force: true)
+  }
+
+  private func refreshMicrophonePermissionLocked() {
+    switch micInputManager.permissionStatus() {
+    case .granted:
+      microphonePermission = LKPermissionStateGranted
+    case .denied:
+      microphonePermission = LKPermissionStateDenied
+    case .notDetermined:
+      microphonePermission = LKPermissionStateNotRequested
+    @unknown default:
+      microphonePermission = LKPermissionStateDenied
+    }
   }
 
   // Resolve BlackHole 2ch (by UID, then by name) and activate the Broadcast

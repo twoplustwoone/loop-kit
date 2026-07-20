@@ -139,6 +139,18 @@ NSString* deviceUIDForID(AudioDeviceID id) {
 
 @implementation LKMicInputManager
 
+- (LKMicrophonePermissionStatus)permissionStatus {
+  switch ([AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeAudio]) {
+    case AVAuthorizationStatusNotDetermined:
+      return LKMicrophonePermissionStatusNotDetermined;
+    case AVAuthorizationStatusAuthorized:
+      return LKMicrophonePermissionStatusGranted;
+    case AVAuthorizationStatusRestricted:
+    case AVAuthorizationStatusDenied:
+      return LKMicrophonePermissionStatusDenied;
+  }
+}
+
 - (instancetype)initWithSampleRate:(double)engineSampleRate maxFrames:(uint32_t)maxFrames {
   self = [super init];
   if (self == nil) return nil;
@@ -167,6 +179,10 @@ NSString* deviceUIDForID(AudioDeviceID id) {
 }
 
 - (BOOL)requestPermissionSync {
+  const LKMicrophonePermissionStatus current = [self permissionStatus];
+  if (current == LKMicrophonePermissionStatusGranted) return YES;
+  if (current == LKMicrophonePermissionStatusDenied) return NO;
+
   __block BOOL granted = NO;
   dispatch_semaphore_t sem = dispatch_semaphore_create(0);
   [AVCaptureDevice requestAccessForMediaType:AVMediaTypeAudio

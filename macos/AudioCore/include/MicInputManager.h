@@ -2,6 +2,12 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+typedef NS_ENUM(NSInteger, LKMicrophonePermissionStatus) {
+  LKMicrophonePermissionStatusNotDetermined = 0,
+  LKMicrophonePermissionStatusGranted = 1,
+  LKMicrophonePermissionStatusDenied = 2,
+};
+
 @interface LKMicInputManager : NSObject
 
 - (instancetype)initWithSampleRate:(double)engineSampleRate maxFrames:(uint32_t)maxFrames;
@@ -10,6 +16,9 @@ NS_ASSUME_NONNULL_BEGIN
 // Safe to call multiple times — subsequent calls short-circuit once a decision
 // is recorded in TCC.
 - (BOOL)requestPermissionSync;
+
+// Reads the current TCC decision without presenting a permission prompt.
+- (LKMicrophonePermissionStatus)permissionStatus;
 
 // Activates capture on the device with the given UID. Pass "system.default"
 // (or empty) to use the current default input. Returns NO if the device isn't
