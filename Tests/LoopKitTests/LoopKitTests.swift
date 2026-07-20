@@ -328,6 +328,21 @@ final class LoopKitTests: XCTestCase {
         XCTAssertTrue(table.xpcRoutes().isEmpty)
     }
 
+    func testLegacySceneDefaultsUseCurrentSafetyPolicy() {
+        var table = RouteTable()
+        let communications = SourceID(applicationBundleID: "com.hnc.Discord")
+        table.restore(
+            nil,
+            sourceIDs: [.microphone, communications],
+            defaults: RoutingSafetyPolicy.defaultDestinations
+        )
+
+        XCTAssertTrue(table.contains(source: .microphone, destination: .broadcast))
+        XCTAssertFalse(table.contains(source: .microphone, destination: .monitor))
+        XCTAssertTrue(table.contains(source: communications, destination: .monitor))
+        XCTAssertFalse(table.contains(source: communications, destination: .broadcast))
+    }
+
     func testSafeRoutingDefaultsAndEchoApproval() throws {
         XCTAssertTrue(LoopKitApplicationPolicy.isCommunicationsApplication("com.hnc.Discord"))
         XCTAssertFalse(LoopKitApplicationPolicy.isCommunicationsApplication("org.mozilla.firefox"))

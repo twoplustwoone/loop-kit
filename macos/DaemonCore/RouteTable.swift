@@ -90,7 +90,11 @@ struct RouteTable {
     routes = replacement
   }
 
-  mutating func restore(_ routeDTOs: [LKXPCRoute]?, sourceIDs: Set<SourceID>) {
+  mutating func restore(
+    _ routeDTOs: [LKXPCRoute]?,
+    sourceIDs: Set<SourceID>,
+    defaults: (SourceID) -> Set<RouteDestination> = { _ in Set(RouteDestination.allCases) }
+  ) {
     self.sourceIDs = sourceIDs
     if let routeDTOs {
       routes = Set(routeDTOs.compactMap { routeDTO in
@@ -102,7 +106,7 @@ struct RouteTable {
       })
     } else {
       routes = Set(sourceIDs.flatMap { sourceID in
-        RouteDestination.allCases.map { Route(source: sourceID, destination: $0) }
+        defaults(sourceID).map { Route(source: sourceID, destination: $0) }
       })
     }
   }

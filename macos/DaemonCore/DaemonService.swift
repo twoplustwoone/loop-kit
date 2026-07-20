@@ -424,6 +424,19 @@ final class LoopKitDaemonRuntime {
       do {
         let loaded = try self.sceneStore.read(named: name)
         let scene = loaded.scene
+        let capturedBundleIDs = Self.sanitizedBundleIDs(loaded.capturedAppBundleIDs)
+        try RoutingSafetyPolicy.validateCapturedApplications(capturedBundleIDs)
+        try RoutingSafetyPolicy.validateMonitorDevice(
+          uid: scene.monitorDeviceUID,
+          broadcastDeviceUID: Self.kBlackHoleDeviceUID
+        )
+        if let routes = scene.routes {
+          try RoutingSafetyPolicy.validateRoutes(
+            routes,
+            echoRiskAcknowledgements: self.echoRiskAcknowledgements
+          )
+        }
+
         self.masterGain = scene.masterGain
         self.requestedMonitorDeviceUID = scene.monitorDeviceUID
         self.sources = Dictionary(
@@ -431,12 +444,13 @@ final class LoopKitDaemonRuntime {
             ($0.id, self.sanitizedSource($0))
           }
         )
-        self.capturedAppBundleIDs = Self.sanitizedBundleIDs(loaded.capturedAppBundleIDs)
+        self.capturedAppBundleIDs = capturedBundleIDs
         self.processTapManager.setSelectedBundleIDs(self.capturedAppBundleIDs)
         self.ensureCaptureSourcesLocked()
         self.routeTable.restore(
           scene.routes,
-          sourceIDs: Set(self.sources.keys.map { SourceID(rawValue: $0) })
+          sourceIDs: Set(self.sources.keys.map { SourceID(rawValue: $0) }),
+          defaults: RoutingSafetyPolicy.defaultDestinations
         )
         self.syncEngineStateLocked()
         self.requestTapReconcile()
@@ -582,10 +596,27 @@ final class LoopKitDaemonRuntime {
   private func restoreSessionLocked() {
     do {
       guard let state = try sessionStore.read() else { return }
+      let restoredBundleIDs = Self.sanitizedBundleIDs(state.selectedApplicationBundleIDs)
+      let restoredAcknowledgements = Set(state.echoRiskAcknowledgements.filter {
+        RoutingSafetyPolicy.isCommunicationApplication($0)
+      })
+      let restoredRoutes = state.routes.map {
+        LKXPCRoute(sourceID: $0.sourceID, destinationID: $0.destinationID)
+      }
+      try RoutingSafetyPolicy.validateCapturedApplications(restoredBundleIDs)
+      try RoutingSafetyPolicy.validateMonitorDevice(
+        uid: state.monitorDeviceUID,
+        broadcastDeviceUID: Self.kBlackHoleDeviceUID
+      )
+      try RoutingSafetyPolicy.validateRoutes(
+        restoredRoutes,
+        echoRiskAcknowledgements: restoredAcknowledgements
+      )
+
       masterGain = ControlPolicy.gain(state.masterGain)
       requestedMonitorDeviceUID = state.monitorDeviceUID
       requestedInputDeviceUID = state.inputDeviceUID
-      capturedAppBundleIDs = Self.sanitizedBundleIDs(state.selectedApplicationBundleIDs)
+      capturedAppBundleIDs = restoredBundleIDs
       sources = Dictionary(uniqueKeysWithValues: state.sources.map { stored in
         let source = LKXPCSourceState(
           id: stored.id,
@@ -600,10 +631,10 @@ final class LoopKitDaemonRuntime {
       processTapManager.setSelectedBundleIDs(capturedAppBundleIDs)
       ensureCaptureSourcesLocked()
       routeTable.restore(
-        state.routes.map { LKXPCRoute(sourceID: $0.sourceID, destinationID: $0.destinationID) },
+        restoredRoutes,
         sourceIDs: Set(sources.keys.map { SourceID(rawValue: $0) })
       )
-      echoRiskAcknowledgements = Set(state.echoRiskAcknowledgements)
+      echoRiskAcknowledgements = restoredAcknowledgements
     } catch {
       let originalError = error
       do {
