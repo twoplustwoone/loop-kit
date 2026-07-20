@@ -655,6 +655,14 @@ final class LoopKitTests: XCTestCase {
                 capabilities: []
             ).isCompatible()
         )
+        XCTAssertFalse(
+            LKXPCHandshake(
+                protocolVersion: LoopKitIPCProtocolVersion + 1,
+                minimumSupportedVersion: LoopKitIPCProtocolVersion + 1,
+                daemonVersion: "future",
+                capabilities: []
+            ).isCompatible()
+        )
 
         let scene = LKXPCScene(
             name: "Versioned",
@@ -715,5 +723,58 @@ final class LoopKitTests: XCTestCase {
             try NSKeyedUnarchiver.unarchivedObject(ofClass: LKXPCCaptureApp.self, from: appData)?.pid,
             123
         )
+    }
+
+    func testIPCSecureCodingRejectsMalformedArchive() {
+        XCTAssertThrowsError(
+            try NSKeyedUnarchiver.unarchivedObject(
+                ofClass: LKXPCHandshake.self,
+                from: Data([0x00, 0x01, 0x02, 0x03])
+            )
+        )
+    }
+
+    func testIPCLegacySceneDefaultsMissingSchemaAndRoutes() throws {
+        let data = try NSKeyedArchiver.archivedData(
+            withRootObject: LegacySceneArchive(),
+            requiringSecureCoding: true
+        )
+        let unarchiver = try NSKeyedUnarchiver(forReadingFrom: data)
+        unarchiver.requiresSecureCoding = true
+        unarchiver.setClass(
+            LKXPCScene.self,
+            forClassName: NSStringFromClass(LegacySceneArchive.self)
+        )
+        let scene = try XCTUnwrap(
+            unarchiver.decodeObject(
+                of: LKXPCScene.self,
+                forKey: NSKeyedArchiveRootObjectKey
+            )
+        )
+        unarchiver.finishDecoding()
+
+        XCTAssertEqual(scene.schemaVersion, 0)
+        XCTAssertEqual(scene.name, "Legacy")
+        XCTAssertNil(scene.routes)
+    }
+}
+
+@objc(LKLegacySceneArchiveFixture)
+private final class LegacySceneArchive: NSObject, NSSecureCoding {
+    static var supportsSecureCoding: Bool { true }
+
+    override init() {
+        super.init()
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    func encode(with coder: NSCoder) {
+        coder.encode("Legacy", forKey: "name")
+        coder.encode(0.75, forKey: "masterGain")
+        coder.encode("system.default", forKey: "monitorDeviceUID")
+        coder.encode([LKXPCSourceState](), forKey: "sources")
     }
 }
