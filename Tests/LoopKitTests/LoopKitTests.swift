@@ -7,6 +7,10 @@ import LoopKitOffline
 
 final class LoopKitTests: XCTestCase {
 
+    func testPermanentProductIdentity() {
+        XCTAssertEqual(LoopKitDaemonMachService, "com.twoplustwoone.LoopKit.agent")
+    }
+
     func testDaemonConstructionDoesNotStartHardware() {
         let service = LoopKitDaemonService()
         let statusReceived = expectation(description: "status")

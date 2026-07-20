@@ -1,6 +1,6 @@
 import Foundation
 
-public let LoopKitDaemonMachService = "com.example.LoopKit.loopkitd"
+public let LoopKitDaemonMachService = "com.twoplustwoone.LoopKit.agent"
 public let LKCaptureModeProcessTap = "processTap"
 public let LKCaptureModeUnavailable = "unavailable"
 public let LKRouteDestinationMonitor = "monitor"

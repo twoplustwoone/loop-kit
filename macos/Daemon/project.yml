@@ -2,7 +2,7 @@ name: LoopKit-Daemon
 options:
   minimumXcodeGenVersion: 2.38.0
   deploymentTarget:
-    macOS: "14.0"
+    macOS: "14.2"
 packages:
   LoopKit:
     path: ../..
@@ -14,7 +14,9 @@ targets:
       - path: Sources
     settings:
       PRODUCT_NAME: loopkitd
-      PRODUCT_BUNDLE_IDENTIFIER: com.example.LoopKit.loopkitd
+      PRODUCT_BUNDLE_IDENTIFIER: com.twoplustwoone.LoopKit.agent
+      MARKETING_VERSION: 1.0.0
+      CURRENT_PROJECT_VERSION: 1
       SWIFT_VERSION: 5.10
       SWIFT_OBJC_INTEROP_MODE: objcxx
       CODE_SIGN_IDENTITY: "-"
@@ -23,6 +25,7 @@ targets:
       # embeds it into __TEXT,__info_plist.
       CREATE_INFOPLIST_SECTION_IN_BINARY: YES
       INFOPLIST_KEY_NSMicrophoneUsageDescription: LoopKit needs microphone access so it can mix your voice with captured app audio.
+      INFOPLIST_KEY_NSAudioCaptureUsageDescription: LoopKit captures audio only from applications you explicitly select.
     dependencies:
       - package: LoopKit
         product: LoopKitDaemonCore

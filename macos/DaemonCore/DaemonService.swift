@@ -18,11 +18,11 @@ final class LoopKitDaemonRuntime {
   private static let kBlackHoleDeviceName = "BlackHole 2ch"
 
   private let queue = DispatchQueue(
-    label: "com.example.LoopKit.loopkitd.state",
+    label: "com.twoplustwoone.LoopKit.agent.state",
     qos: .userInteractive
   )
   private let maintenanceQueue = DispatchQueue(
-    label: "com.example.LoopKit.loopkitd.maintenance",
+    label: "com.twoplustwoone.LoopKit.agent.maintenance",
     qos: .utility
   )
   private let sceneStore = SceneStore(folder: SceneStore.defaultFolder)

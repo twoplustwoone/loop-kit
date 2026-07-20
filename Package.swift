@@ -4,7 +4,7 @@ import PackageDescription
 let package = Package(
     name: "LoopKit",
     platforms: [
-        .macOS(.v14)
+        .macOS("14.2")
     ],
     products: [
         .library(name: "LoopKitEngine", targets: ["LoopKitEngine"]),

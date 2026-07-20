@@ -642,7 +642,7 @@ void destroyTapContext(const std::shared_ptr<TapContext>& context) {
       return nullptr;
     }
 
-    NSString* aggregateUID = [NSString stringWithFormat:@"com.example.LoopKit.tap.%@", NSUUID.UUID.UUIDString];
+    NSString* aggregateUID = [NSString stringWithFormat:@"com.twoplustwoone.LoopKit.tap.%@", NSUUID.UUID.UUIDString];
     NSDictionary* tapEntry = @{
       [NSString stringWithUTF8String:kAudioSubTapUIDKey]: uid,
       [NSString stringWithUTF8String:kAudioSubTapDriftCompensationKey]: @NO,
