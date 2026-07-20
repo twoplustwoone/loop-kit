@@ -2,5 +2,6 @@
 .build/
 xcuserdata/
 DerivedData/
+dist/
 *.xcodeproj
 *.xcworkspace
