@@ -16,6 +16,9 @@ public let LKRuntimeLifecycleFailed = "failed"
 public let LKPermissionStateNotRequested = "notRequested"
 public let LKPermissionStateGranted = "granted"
 public let LKPermissionStateDenied = "denied"
+public let LKHealthStateHealthy = "healthy"
+public let LKHealthStateRecovering = "recovering"
+public let LKHealthStateFault = "fault"
 
 public enum LoopKitCodeSigningRequirement {
   public static let appIdentifier = "com.twoplustwoone.LoopKit"
@@ -309,6 +312,16 @@ public final class LKXPCStatus: NSObject, NSSecureCoding {
   public let activeBroadcastDeviceUID: String
   public let broadcastOutputSampleRate: Int
   public let broadcastOutputWarning: String?
+  public let tapUnderrunRate: Double
+  public let tapOverrunRate: Double
+  public let monitorUnderrunRate: Double
+  public let monitorOverrunRate: Double
+  public let broadcastUnderrunRate: Double
+  public let broadcastOverrunRate: Double
+  public let monitorQueueFill: Double
+  public let broadcastQueueFill: Double
+  public let schedulerDiscontinuities: UInt64
+  public let healthState: String
 
   public init(
     daemonOnline: Bool,
@@ -339,7 +352,17 @@ public final class LKXPCStatus: NSObject, NSSecureCoding {
     broadcastOutputConnected: Bool = false,
     activeBroadcastDeviceUID: String = "",
     broadcastOutputSampleRate: Int = 0,
-    broadcastOutputWarning: String? = nil
+    broadcastOutputWarning: String? = nil,
+    tapUnderrunRate: Double = 0,
+    tapOverrunRate: Double = 0,
+    monitorUnderrunRate: Double = 0,
+    monitorOverrunRate: Double = 0,
+    broadcastUnderrunRate: Double = 0,
+    broadcastOverrunRate: Double = 0,
+    monitorQueueFill: Double = 0,
+    broadcastQueueFill: Double = 0,
+    schedulerDiscontinuities: UInt64 = 0,
+    healthState: String = LKHealthStateRecovering
   ) {
     self.daemonOnline = daemonOnline
     self.runtimeLifecycle = runtimeLifecycle
@@ -370,6 +393,16 @@ public final class LKXPCStatus: NSObject, NSSecureCoding {
     self.activeBroadcastDeviceUID = activeBroadcastDeviceUID
     self.broadcastOutputSampleRate = broadcastOutputSampleRate
     self.broadcastOutputWarning = broadcastOutputWarning
+    self.tapUnderrunRate = tapUnderrunRate
+    self.tapOverrunRate = tapOverrunRate
+    self.monitorUnderrunRate = monitorUnderrunRate
+    self.monitorOverrunRate = monitorOverrunRate
+    self.broadcastUnderrunRate = broadcastUnderrunRate
+    self.broadcastOverrunRate = broadcastOverrunRate
+    self.monitorQueueFill = monitorQueueFill
+    self.broadcastQueueFill = broadcastQueueFill
+    self.schedulerDiscontinuities = schedulerDiscontinuities
+    self.healthState = healthState
   }
 
   public required init?(coder: NSCoder) {
@@ -405,6 +438,17 @@ public final class LKXPCStatus: NSObject, NSSecureCoding {
     activeBroadcastDeviceUID = (coder.decodeObject(of: NSString.self, forKey: "activeDiscordDeviceUID") as String?) ?? ""
     broadcastOutputSampleRate = coder.decodeInteger(forKey: "discordOutputSampleRate")
     broadcastOutputWarning = coder.decodeObject(of: NSString.self, forKey: "discordOutputWarning") as String?
+    tapUnderrunRate = coder.decodeDouble(forKey: "tapUnderrunRate")
+    tapOverrunRate = coder.decodeDouble(forKey: "tapOverrunRate")
+    monitorUnderrunRate = coder.decodeDouble(forKey: "monitorUnderrunRate")
+    monitorOverrunRate = coder.decodeDouble(forKey: "monitorOverrunRate")
+    broadcastUnderrunRate = coder.decodeDouble(forKey: "broadcastUnderrunRate")
+    broadcastOverrunRate = coder.decodeDouble(forKey: "broadcastOverrunRate")
+    monitorQueueFill = coder.decodeDouble(forKey: "monitorQueueFill")
+    broadcastQueueFill = coder.decodeDouble(forKey: "broadcastQueueFill")
+    schedulerDiscontinuities = UInt64(coder.decodeInt64(forKey: "schedulerDiscontinuities"))
+    healthState = (coder.decodeObject(of: NSString.self, forKey: "healthState") as String?)
+      ?? LKHealthStateRecovering
   }
 
   public func encode(with coder: NSCoder) {
@@ -437,6 +481,16 @@ public final class LKXPCStatus: NSObject, NSSecureCoding {
     coder.encode(activeBroadcastDeviceUID, forKey: "activeDiscordDeviceUID")
     coder.encode(broadcastOutputSampleRate, forKey: "discordOutputSampleRate")
     coder.encode(broadcastOutputWarning, forKey: "discordOutputWarning")
+    coder.encode(tapUnderrunRate, forKey: "tapUnderrunRate")
+    coder.encode(tapOverrunRate, forKey: "tapOverrunRate")
+    coder.encode(monitorUnderrunRate, forKey: "monitorUnderrunRate")
+    coder.encode(monitorOverrunRate, forKey: "monitorOverrunRate")
+    coder.encode(broadcastUnderrunRate, forKey: "broadcastUnderrunRate")
+    coder.encode(broadcastOverrunRate, forKey: "broadcastOverrunRate")
+    coder.encode(monitorQueueFill, forKey: "monitorQueueFill")
+    coder.encode(broadcastQueueFill, forKey: "broadcastQueueFill")
+    coder.encode(Int64(schedulerDiscontinuities), forKey: "schedulerDiscontinuities")
+    coder.encode(healthState, forKey: "healthState")
   }
 }
 

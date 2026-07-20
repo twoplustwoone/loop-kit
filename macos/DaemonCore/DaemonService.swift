@@ -89,6 +89,7 @@ final class LoopKitDaemonRuntime {
   private var lifecycle = LKRuntimeLifecycleStarting
   private var microphonePermission = LKPermissionStateNotRequested
   private var started = false
+  private var recentHealthTracker = RecentAudioHealthTracker()
   private var echoRiskAcknowledgements: Set<String> = []
   private lazy var sessionWriter = DebouncedSessionWriter(queue: queue) { [weak self] state in
     guard let self else { return }
@@ -463,6 +464,34 @@ final class LoopKitDaemonRuntime {
       let broadcastUnderruns = self.broadcastOutputManager.underrunCount()
       let broadcastOverruns = self.broadcastOutputManager.overrunCount()
       let tapSampleRate = Int(self.processTapManager.tapSampleRate().rounded())
+      let rates = self.recentHealthTracker.sample(
+        counters: AudioHealthCounters(
+          tapUnderruns: tapUnderruns,
+          tapOverruns: tapOverruns,
+          monitorUnderruns: monitorUnderruns,
+          monitorOverruns: monitorOverruns,
+          broadcastUnderruns: broadcastUnderruns,
+          broadcastOverruns: broadcastOverruns
+        )
+      )
+      if !self.started {
+        self.lifecycle = LKRuntimeLifecycleStarting
+      } else if self.engine == nil {
+        self.lifecycle = LKRuntimeLifecycleFailed
+      } else if self.captureWarning != nil || self.monitorWarning != nil
+        || self.inputWarning != nil || self.broadcastOutputWarning != nil {
+        self.lifecycle = LKRuntimeLifecycleDegraded
+      } else {
+        self.lifecycle = LKRuntimeLifecycleReady
+      }
+      let healthState: String
+      if self.lifecycle == LKRuntimeLifecycleFailed || self.lastError != nil {
+        healthState = LKHealthStateFault
+      } else if self.lifecycle != LKRuntimeLifecycleReady || rates.hasRecentEvents {
+        healthState = LKHealthStateRecovering
+      } else {
+        healthState = LKHealthStateHealthy
+      }
       reply(
         LKXPCStatus(
           daemonOnline: true,
@@ -493,7 +522,17 @@ final class LoopKitDaemonRuntime {
           broadcastOutputConnected: self.broadcastOutputManager.isRunning(),
           activeBroadcastDeviceUID: self.activeBroadcastDeviceUID,
           broadcastOutputSampleRate: self.broadcastOutputSampleRate,
-          broadcastOutputWarning: self.broadcastOutputWarning
+          broadcastOutputWarning: self.broadcastOutputWarning,
+          tapUnderrunRate: rates.tapUnderruns,
+          tapOverrunRate: rates.tapOverruns,
+          monitorUnderrunRate: rates.monitorUnderruns,
+          monitorOverrunRate: rates.monitorOverruns,
+          broadcastUnderrunRate: rates.broadcastUnderruns,
+          broadcastOverrunRate: rates.broadcastOverruns,
+          monitorQueueFill: self.monitorOutputManager.queueFillRatio(),
+          broadcastQueueFill: self.broadcastOutputManager.queueFillRatio(),
+          schedulerDiscontinuities: self.schedulerDiscontinuities,
+          healthState: healthState
         )
       )
     }

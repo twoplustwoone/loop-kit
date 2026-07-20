@@ -439,6 +439,36 @@ final class LoopKitTests: XCTestCase {
         )
     }
 
+    func testRecentHealthReportsRatesAndHandlesCounterReset() {
+        var tracker = RecentAudioHealthTracker()
+        let start = Date(timeIntervalSince1970: 100)
+        let first = AudioHealthCounters(
+            tapUnderruns: 10, tapOverruns: 2,
+            monitorUnderruns: 5, monitorOverruns: 0,
+            broadcastUnderruns: 4, broadcastOverruns: 1
+        )
+        XCTAssertEqual(tracker.sample(counters: first, now: start), .zero)
+        let second = AudioHealthCounters(
+            tapUnderruns: 14, tapOverruns: 4,
+            monitorUnderruns: 7, monitorOverruns: 2,
+            broadcastUnderruns: 6, broadcastOverruns: 3
+        )
+        let rates = tracker.sample(counters: second, now: start.addingTimeInterval(2))
+        XCTAssertEqual(rates.tapUnderruns, 2)
+        XCTAssertEqual(rates.broadcastOverruns, 1)
+        XCTAssertTrue(rates.hasRecentEvents)
+
+        let reset = AudioHealthCounters(
+            tapUnderruns: 0, tapOverruns: 0,
+            monitorUnderruns: 0, monitorOverruns: 0,
+            broadcastUnderruns: 0, broadcastOverruns: 0
+        )
+        XCTAssertEqual(
+            tracker.sample(counters: reset, now: start.addingTimeInterval(3)),
+            .zero
+        )
+    }
+
     func testAudioProcessingScheduleBoundsCatchUp() {
         var schedule = AudioProcessingSchedule(
             sampleRate: 48_000,
