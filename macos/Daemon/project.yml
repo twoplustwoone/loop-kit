@@ -24,8 +24,7 @@ targets:
       # microphone usage description. CREATE_INFOPLIST_SECTION_IN_BINARY
       # embeds it into __TEXT,__info_plist.
       CREATE_INFOPLIST_SECTION_IN_BINARY: YES
-      INFOPLIST_KEY_NSMicrophoneUsageDescription: LoopKit needs microphone access so it can mix your voice with captured app audio.
-      INFOPLIST_KEY_NSAudioCaptureUsageDescription: LoopKit captures audio only from applications you explicitly select.
+      INFOPLIST_FILE: Info.plist
     dependencies:
       - package: LoopKit
         product: LoopKitDaemonCore

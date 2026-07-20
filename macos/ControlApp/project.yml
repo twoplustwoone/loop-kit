@@ -7,6 +7,31 @@ packages:
   LoopKit:
     path: ../..
 targets:
+  LoopKitAgent:
+    type: tool
+    platform: macOS
+    sources:
+      - path: ../Daemon/Sources
+    settings:
+      PRODUCT_NAME: loopkitd
+      PRODUCT_BUNDLE_IDENTIFIER: com.twoplustwoone.LoopKit.agent
+      MARKETING_VERSION: 1.0.0
+      CURRENT_PROJECT_VERSION: 1
+      SWIFT_VERSION: 5.10
+      SWIFT_OBJC_INTEROP_MODE: objcxx
+      CODE_SIGN_IDENTITY: "-"
+      CREATE_INFOPLIST_SECTION_IN_BINARY: YES
+      INFOPLIST_FILE: ../Daemon/Info.plist
+    dependencies:
+      - package: LoopKit
+        product: LoopKitDaemonCore
+      - package: LoopKit
+        product: LoopKitIPC
+      - sdk: AppKit.framework
+      - sdk: CoreAudio.framework
+      - sdk: AudioToolbox.framework
+      - sdk: AVFoundation.framework
+      - sdk: CoreMedia.framework
   ControlApp:
     type: application
     platform: macOS
@@ -22,7 +47,19 @@ targets:
       CODE_SIGN_IDENTITY: "-"
       INFOPLIST_KEY_CFBundleDisplayName: LoopKit
     dependencies:
+      - target: LoopKitAgent
       - package: LoopKit
         product: LoopKitIPC
       - package: LoopKit
         product: LoopKitUI
+    postBuildScripts:
+      - name: Embed LoopKit LaunchAgent
+        script: |
+          set -euo pipefail
+          launch_agents="${TARGET_BUILD_DIR}/${CONTENTS_FOLDER_PATH}/Library/LaunchAgents"
+          /bin/mkdir -p "${launch_agents}"
+          /usr/bin/ditto "${SRCROOT}/Resources/com.twoplustwoone.LoopKit.agent.plist" "${launch_agents}/com.twoplustwoone.LoopKit.agent.plist"
+        inputFiles:
+          - $(SRCROOT)/Resources/com.twoplustwoone.LoopKit.agent.plist
+        outputFiles:
+          - $(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/Library/LaunchAgents/com.twoplustwoone.LoopKit.agent.plist
