@@ -269,17 +269,17 @@ final class LoopKitTests: XCTestCase {
 
     func testRouteTableDefaultsNewSourcesAndReplacesAtomically() throws {
         var table = RouteTable()
-        table.reconcile(sourceIDs: ["mic", "app:player"])
+        table.reconcile(sourceIDs: [.microphone, SourceID(applicationBundleID: "player")])
 
-        XCTAssertTrue(table.contains(sourceID: "mic", destinationID: LKRouteDestinationMonitor))
-        XCTAssertTrue(table.contains(sourceID: "mic", destinationID: LKRouteDestinationBroadcast))
+        XCTAssertTrue(table.contains(source: .microphone, destination: .monitor))
+        XCTAssertTrue(table.contains(source: .microphone, destination: .broadcast))
         XCTAssertEqual(table.xpcRoutes().count, 4)
 
         try table.replace(with: [
             LKXPCRoute(sourceID: "app:player", destinationID: LKRouteDestinationBroadcast)
         ])
         XCTAssertEqual(table.xpcRoutes().count, 1)
-        XCTAssertFalse(table.contains(sourceID: "mic", destinationID: LKRouteDestinationMonitor))
+        XCTAssertFalse(table.contains(source: .microphone, destination: .monitor))
 
         XCTAssertThrowsError(try table.replace(with: [
             LKXPCRoute(sourceID: "unknown", destinationID: LKRouteDestinationMonitor)
@@ -289,11 +289,54 @@ final class LoopKitTests: XCTestCase {
 
     func testRouteTableLegacyRestoreDefaultsButExplicitEmptyDisconnects() {
         var table = RouteTable()
-        table.restore(nil, sourceIDs: ["mic"])
+        table.restore(nil, sourceIDs: [.microphone])
         XCTAssertEqual(table.xpcRoutes().count, 2)
 
-        table.restore([], sourceIDs: ["mic"])
+        table.restore([], sourceIDs: [.microphone])
         XCTAssertTrue(table.xpcRoutes().isEmpty)
+    }
+
+    func testSafeRoutingDefaultsAndEchoApproval() throws {
+        XCTAssertEqual(
+            RoutingSafetyPolicy.defaultDestinations(for: .microphone),
+            [.broadcast]
+        )
+        XCTAssertEqual(
+            RoutingSafetyPolicy.defaultDestinations(
+                for: SourceID(applicationBundleID: "org.mozilla.firefox")
+            ),
+            [.monitor, .broadcast]
+        )
+        let discord = SourceID(applicationBundleID: "com.hnc.Discord")
+        XCTAssertEqual(RoutingSafetyPolicy.defaultDestinations(for: discord), [.monitor])
+
+        let risky = [
+            LKXPCRoute(sourceID: discord.rawValue, destinationID: LKRouteDestinationBroadcast)
+        ]
+        XCTAssertThrowsError(
+            try RoutingSafetyPolicy.validateRoutes(risky, echoRiskAcknowledgements: [])
+        )
+        XCTAssertNoThrow(
+            try RoutingSafetyPolicy.validateRoutes(
+                risky, echoRiskAcknowledgements: ["com.hnc.Discord"]
+            )
+        )
+    }
+
+    func testSafetyRejectsSelfCaptureAndBroadcastMonitor() {
+        XCTAssertThrowsError(
+            try RoutingSafetyPolicy.validateCapturedApplications(["com.twoplustwoone.LoopKit"])
+        )
+        XCTAssertThrowsError(
+            try RoutingSafetyPolicy.validateMonitorDevice(
+                uid: "BlackHole2ch_UID", broadcastDeviceUID: "BlackHole2ch_UID"
+            )
+        )
+        XCTAssertNoThrow(
+            try RoutingSafetyPolicy.validateMonitorDevice(
+                uid: "speaker.uid", broadcastDeviceUID: "BlackHole2ch_UID"
+            )
+        )
     }
 
     func testGainPolicyClampsInvalidBoundaryValues() {

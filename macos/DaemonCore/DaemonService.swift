@@ -159,6 +159,15 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
 
   public func setMonitorDevice(uid: String, withReply reply: @escaping (LKXPCResult) -> Void) {
     queue.async {
+      do {
+        try RoutingSafetyPolicy.validateMonitorDevice(
+          uid: uid,
+          broadcastDeviceUID: self.activeBroadcastDeviceUID
+        )
+      } catch {
+        reply(LKXPCResult(success: false, message: error.localizedDescription))
+        return
+      }
       let devices = AudioDevices.outputDevices()
       guard devices.contains(where: { $0.uid == uid }) || uid == "system.default" else {
         reply(LKXPCResult(success: false, message: "Monitor output device not found"))
@@ -258,6 +267,12 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
   public func setCapturedApps(bundleIDs: [String], withReply reply: @escaping (LKXPCResult) -> Void) {
     queue.async {
       let sanitized = Self.sanitizedBundleIDs(bundleIDs)
+      do {
+        try RoutingSafetyPolicy.validateCapturedApplications(sanitized)
+      } catch {
+        reply(LKXPCResult(success: false, message: error.localizedDescription))
+        return
+      }
       self.capturedAppBundleIDs = sanitized
       self.processTapManager.setSelectedBundleIDs(sanitized)
       self.ensureCaptureSourcesLocked()
@@ -284,6 +299,10 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
     queue.async {
       self.ensureCaptureSourcesLocked()
       do {
+        try RoutingSafetyPolicy.validateRoutes(
+          routes,
+          echoRiskAcknowledgements: self.echoRiskAcknowledgements
+        )
         try self.routeTable.replace(with: routes)
         self.scheduleSessionSaveLocked()
         reply(LKXPCResult(success: true))
@@ -331,7 +350,10 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
         self.capturedAppBundleIDs = Self.sanitizedBundleIDs(loaded.capturedAppBundleIDs)
         self.processTapManager.setSelectedBundleIDs(self.capturedAppBundleIDs)
         self.ensureCaptureSourcesLocked()
-        self.routeTable.restore(scene.routes, sourceIDs: Set(self.sources.keys))
+        self.routeTable.restore(
+          scene.routes,
+          sourceIDs: Set(self.sources.keys.map { SourceID(rawValue: $0) })
+        )
         self.syncEngineStateLocked()
         self.requestTapReconcile()
         _ = self.applyMonitorDeviceLocked(preferredUID: self.requestedMonitorDeviceUID, allowFallback: true, reason: "scene load")
@@ -455,7 +477,7 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
       ensureCaptureSourcesLocked()
       routeTable.restore(
         state.routes.map { LKXPCRoute(sourceID: $0.sourceID, destinationID: $0.destinationID) },
-        sourceIDs: Set(sources.keys)
+        sourceIDs: Set(sources.keys.map { SourceID(rawValue: $0) })
       )
       echoRiskAcknowledgements = Set(state.echoRiskAcknowledgements)
     } catch {
@@ -503,7 +525,10 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
         enabled: true
       )
     }
-    routeTable.reconcile(sourceIDs: Set(sources.keys))
+    routeTable.reconcile(
+      sourceIDs: Set(sources.keys.map { SourceID(rawValue: $0) }),
+      defaults: RoutingSafetyPolicy.defaultDestinations
+    )
   }
 
   private func ensureCaptureSourcesLocked() {
@@ -541,7 +566,10 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
         }
       }
     }
-    routeTable.reconcile(sourceIDs: Set(sources.keys))
+    routeTable.reconcile(
+      sourceIDs: Set(sources.keys.map { SourceID(rawValue: $0) }),
+      defaults: RoutingSafetyPolicy.defaultDestinations
+    )
   }
 
   private func visibleSourcesLocked() -> [LKXPCSourceState] {
@@ -754,11 +782,17 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
 
   @discardableResult
   private func applyMonitorDeviceLocked(preferredUID: String, allowFallback: Bool, reason _: String) -> Bool {
-    let devices = AudioDevices.outputDevices()
+    let devices = AudioDevices.outputDevices().filter {
+      $0.uid != Self.kBlackHoleDeviceUID && $0.uid != activeBroadcastDeviceUID
+    }
+    let systemDefaultUID = AudioDevices.defaultOutputUID()
+    let safeDefaultUID = devices.contains(where: { $0.uid == systemDefaultUID })
+      ? systemDefaultUID
+      : devices.first?.uid
     let decision = MonitorOutputPolicy.activate(
       requestedUID: preferredUID,
       devices: devices.map { MonitorOutputDevice(uid: $0.uid, name: $0.name) },
-      defaultUID: AudioDevices.defaultOutputUID(),
+      defaultUID: safeDefaultUID,
       allowFallback: allowFallback
     ) { uid in
       if self.monitorOutputManager.activateDevice(withUID: uid) {
@@ -870,12 +904,12 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
           frames: mixedFrames,
           gain: Float(source.gain),
           broadcast: routeTable.contains(
-            sourceID: sourceID,
-            destinationID: LKRouteDestinationBroadcast
+            source: SourceID(rawValue: sourceID),
+            destination: .broadcast
           ),
           monitor: routeTable.contains(
-            sourceID: sourceID,
-            destinationID: LKRouteDestinationMonitor
+            source: SourceID(rawValue: sourceID),
+            destination: .monitor
           )
         )
       }
@@ -893,10 +927,10 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
     }
 
     let micBroadcastFrames = micActive
-      && routeTable.contains(sourceID: Self.micSourceID, destinationID: LKRouteDestinationBroadcast)
+      && routeTable.contains(source: .microphone, destination: .broadcast)
       ? frameCount : 0
     let micMonitorFrames = micActive
-      && routeTable.contains(sourceID: Self.micSourceID, destinationID: LKRouteDestinationMonitor)
+      && routeTable.contains(source: .microphone, destination: .monitor)
       ? frameCount : 0
     let mixMeters = audioBlocks.process(
       engine: engine,
