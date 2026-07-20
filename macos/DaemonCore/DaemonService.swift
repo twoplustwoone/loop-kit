@@ -740,6 +740,8 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
     var peakR: Float = 0
     var sumSqL: Double = 0
     var sumSqR: Double = 0
+    var clippedL = false
+    var clippedR = false
     for i in 0..<frames {
       let l = left[i] * gain
       let r = right[i] * gain
@@ -747,6 +749,8 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
       peakR = max(peakR, abs(r))
       sumSqL += Double(l * l)
       sumSqR += Double(r * r)
+      clippedL = clippedL || abs(l) > 0.95
+      clippedR = clippedR || abs(r) > 0.95
     }
 
     return LKXPCMeter(
@@ -754,7 +758,9 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
       peakL: Double(peakL),
       peakR: Double(peakR),
       rmsL: sqrt(sumSqL / Double(frames)),
-      rmsR: sqrt(sumSqR / Double(frames))
+      rmsR: sqrt(sumSqR / Double(frames)),
+      clippedL: clippedL,
+      clippedR: clippedR
     )
   }
 
@@ -865,8 +871,8 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
     let micMonitorFrames = micActive
       && routeTable.contains(sourceID: Self.micSourceID, destinationID: LKRouteDestinationMonitor)
       ? frameCount : 0
-    var broadcastMeter = lk_meter_block(peak_l: 0, peak_r: 0, rms_l: 0, rms_r: 0)
-    var monitorMeter = lk_meter_block(peak_l: 0, peak_r: 0, rms_l: 0, rms_r: 0)
+    var broadcastMeter = lk_meter_block(peak_l: 0, peak_r: 0, rms_l: 0, rms_r: 0, clipped_l: 0, clipped_r: 0)
+    var monitorMeter = lk_meter_block(peak_l: 0, peak_r: 0, rms_l: 0, rms_r: 0, clipped_l: 0, clipped_r: 0)
     withAllBuffers { broadcastAppL, broadcastAppR, monitorAppL, monitorAppR, micL, micR, broadcastL, broadcastR, monitorL, monitorR in
       var broadcastAppIn = lk_input_audio_block(left: broadcastAppL, right: broadcastAppR, frames: frameCount)
       var broadcastMicIn = lk_input_audio_block(left: micL, right: micR, frames: micBroadcastFrames)
@@ -886,6 +892,24 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
         &monitorMeter
       )
     }
+    meterMap[LKMeterSourceBroadcastMix] = LKXPCMeter(
+      sourceID: LKMeterSourceBroadcastMix,
+      peakL: Double(broadcastMeter.peak_l),
+      peakR: Double(broadcastMeter.peak_r),
+      rmsL: Double(broadcastMeter.rms_l),
+      rmsR: Double(broadcastMeter.rms_r),
+      clippedL: broadcastMeter.clipped_l != 0,
+      clippedR: broadcastMeter.clipped_r != 0
+    )
+    meterMap[LKMeterSourceMonitorMix] = LKXPCMeter(
+      sourceID: LKMeterSourceMonitorMix,
+      peakL: Double(monitorMeter.peak_l),
+      peakR: Double(monitorMeter.peak_r),
+      rmsL: Double(monitorMeter.rms_l),
+      rmsR: Double(monitorMeter.rms_r),
+      clippedL: monitorMeter.clipped_l != 0,
+      clippedR: monitorMeter.clipped_r != 0
+    )
 
     // The Broadcast stream is always-on: a downstream consumer such as
     // Discord expects continuous audio even during silence, unlike the

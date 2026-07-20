@@ -40,7 +40,7 @@ final class LoopKitTests: XCTestCase {
                                 var micIn = lk_input_audio_block(left: micLBuf.baseAddress, right: micRBuf.baseAddress, frames: 4)
                                 var broadcastOut = lk_output_audio_block(left: outLBuf.baseAddress, right: outRBuf.baseAddress, frames: 4)
                                 var monitorOut = lk_output_audio_block(left: nil, right: nil, frames: 0)
-                                var meters = lk_meter_block(peak_l: 0, peak_r: 0, rms_l: 0, rms_r: 0)
+                                var meters = lk_meter_block(peak_l: 0, peak_r: 0, rms_l: 0, rms_r: 0, clipped_l: 0, clipped_r: 0)
 
                                 lk_engine_process(engine, &appIn, &micIn, &broadcastOut, &monitorOut, &meters)
 
@@ -90,7 +90,7 @@ final class LoopKitTests: XCTestCase {
                                 var micIn = lk_input_audio_block(left: micLBuf.baseAddress, right: micRBuf.baseAddress, frames: 1)
                                 var broadcastOut = lk_output_audio_block(left: outLBuf.baseAddress, right: outRBuf.baseAddress, frames: 1)
                                 var monitorOut = lk_output_audio_block(left: nil, right: nil, frames: 0)
-                                var meters = lk_meter_block(peak_l: 0, peak_r: 0, rms_l: 0, rms_r: 0)
+                                var meters = lk_meter_block(peak_l: 0, peak_r: 0, rms_l: 0, rms_r: 0, clipped_l: 0, clipped_r: 0)
 
                                 lk_engine_process(engine, &appIn, &micIn, &broadcastOut, &monitorOut, &meters)
                                 XCTAssertEqual(outLBuf[0], 0.5, accuracy: 1e-4, "Solo APP should exclude non-solo MIC")
@@ -135,7 +135,7 @@ final class LoopKitTests: XCTestCase {
                             var micIn = lk_input_audio_block(left: zerosBuf.baseAddress, right: zerosBuf.baseAddress, frames: 2)
                             var broadcastOut = lk_output_audio_block(left: outLBuf.baseAddress, right: outRBuf.baseAddress, frames: 2)
                             var monitorOut = lk_output_audio_block(left: nil, right: nil, frames: 0)
-                            var meters = lk_meter_block(peak_l: 0, peak_r: 0, rms_l: 0, rms_r: 0)
+                            var meters = lk_meter_block(peak_l: 0, peak_r: 0, rms_l: 0, rms_r: 0, clipped_l: 0, clipped_r: 0)
 
                             lk_engine_process(engine, &appIn, &micIn, &broadcastOut, &monitorOut, &meters)
 
@@ -367,5 +367,24 @@ final class LoopKitTests: XCTestCase {
         XCTAssertEqual(decodedStatus.sampleRate, 48_000)
         XCTAssertEqual(decodedStatus.captureMode, LKCaptureModeUnavailable)
         XCTAssertEqual(decodedStatus.captureWarning, "No capture adapter")
+
+        let meter = LKXPCMeter(
+            sourceID: LKMeterSourceBroadcastMix,
+            peakL: 0.99,
+            peakR: 0.8,
+            rmsL: 0.5,
+            rmsR: 0.4,
+            clippedL: true,
+            clippedR: false
+        )
+        let meterData = try NSKeyedArchiver.archivedData(
+            withRootObject: meter,
+            requiringSecureCoding: true
+        )
+        let decodedMeter = try XCTUnwrap(
+            NSKeyedUnarchiver.unarchivedObject(ofClass: LKXPCMeter.self, from: meterData)
+        )
+        XCTAssertTrue(decodedMeter.clippedL)
+        XCTAssertFalse(decodedMeter.clippedR)
     }
 }

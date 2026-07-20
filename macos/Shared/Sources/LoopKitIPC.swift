@@ -5,6 +5,8 @@ public let LKCaptureModeProcessTap = "processTap"
 public let LKCaptureModeUnavailable = "unavailable"
 public let LKRouteDestinationMonitor = "monitor"
 public let LKRouteDestinationBroadcast = "broadcast"
+public let LKMeterSourceBroadcastMix = "mix:broadcast"
+public let LKMeterSourceMonitorMix = "mix:monitor"
 
 @objc(LKXPCResult)
 @objcMembers
@@ -150,13 +152,25 @@ public final class LKXPCMeter: NSObject, NSSecureCoding {
   public let peakR: Double
   public let rmsL: Double
   public let rmsR: Double
+  public let clippedL: Bool
+  public let clippedR: Bool
 
-  public init(sourceID: String, peakL: Double, peakR: Double, rmsL: Double, rmsR: Double) {
+  public init(
+    sourceID: String,
+    peakL: Double,
+    peakR: Double,
+    rmsL: Double,
+    rmsR: Double,
+    clippedL: Bool = false,
+    clippedR: Bool = false
+  ) {
     self.sourceID = sourceID
     self.peakL = peakL
     self.peakR = peakR
     self.rmsL = rmsL
     self.rmsR = rmsR
+    self.clippedL = clippedL
+    self.clippedR = clippedR
   }
 
   public required init?(coder: NSCoder) {
@@ -168,6 +182,8 @@ public final class LKXPCMeter: NSObject, NSSecureCoding {
     peakR = coder.decodeDouble(forKey: "peakR")
     rmsL = coder.decodeDouble(forKey: "rmsL")
     rmsR = coder.decodeDouble(forKey: "rmsR")
+    clippedL = coder.decodeBool(forKey: "clippedL")
+    clippedR = coder.decodeBool(forKey: "clippedR")
   }
 
   public func encode(with coder: NSCoder) {
@@ -176,6 +192,8 @@ public final class LKXPCMeter: NSObject, NSSecureCoding {
     coder.encode(peakR, forKey: "peakR")
     coder.encode(rmsL, forKey: "rmsL")
     coder.encode(rmsR, forKey: "rmsR")
+    coder.encode(clippedL, forKey: "clippedL")
+    coder.encode(clippedR, forKey: "clippedR")
   }
 }
 

@@ -102,7 +102,7 @@ public enum OfflineMixer {
                   frames: UInt32(frames)
                 )
                 var monitorOutput = lk_output_audio_block(left: nil, right: nil, frames: 0)
-                var meters = lk_meter_block(peak_l: 0, peak_r: 0, rms_l: 0, rms_r: 0)
+                var meters = lk_meter_block(peak_l: 0, peak_r: 0, rms_l: 0, rms_r: 0, clipped_l: 0, clipped_r: 0)
                 lk_engine_process(
                   engine,
                   &appInput,

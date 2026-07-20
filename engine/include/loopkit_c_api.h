@@ -42,6 +42,8 @@ typedef struct lk_meter_block {
   float peak_r;
   float rms_l;
   float rms_r;
+  uint8_t clipped_l;
+  uint8_t clipped_r;
 } lk_meter_block;
 
 lk_engine_t* lk_engine_create(const lk_engine_config* config);

@@ -109,6 +109,46 @@ void testLimiterAndMeters() {
   expect(std::fabs(out_l[1]) <= 1.0f, "soft clipping lower bound");
   expect(meters.peak_l <= 1.0f, "peak meter bound");
   expect(meters.rms_l > 0.0f, "rms meter non-zero");
+  expect(meters.clipped_l, "pre-limiter clipping reported on left");
+  expect(meters.clipped_r, "pre-limiter clipping reported on right");
+}
+
+float processSample(float sample, loopkit::MeterBlock* meters = nullptr) {
+  loopkit::Engine engine;
+  const float zero = 0.0f;
+  float output = 0.0f;
+  loopkit::InputAudioBlock app{&sample, &sample, 1};
+  loopkit::InputAudioBlock mic{&zero, &zero, 1};
+  loopkit::OutputAudioBlock out{&output, &output, 1};
+  loopkit::MeterBlock local_meters;
+  engine.process(app, mic, out, {}, meters == nullptr ? &local_meters : meters);
+  return output;
+}
+
+void testSaturationCurveIsContinuousAndMonotonic() {
+  expect(near(processSample(0.94f), 0.94f), "saturation preserves quiet samples");
+  expect(near(processSample(0.95f), 0.95f), "saturation preserves threshold sample");
+
+  const float left = processSample(0.95f - 1e-5f);
+  const float right = processSample(0.95f + 1e-5f);
+  expect(std::fabs(right - left) < 3e-5f, "saturation is continuous at threshold");
+
+  float previous = processSample(0.0f);
+  for (int step = 1; step <= 8000; ++step) {
+    const float input = static_cast<float>(step) / 1000.0f;
+    const float output = processSample(input);
+    expect(output + 1e-6f >= previous, "positive saturation sweep is monotonic");
+    expect(output <= 1.0f, "positive saturation sweep stays in range");
+    expect(near(processSample(-input), -output, 1e-5f), "saturation has odd symmetry");
+    previous = output;
+  }
+
+  loopkit::MeterBlock below;
+  (void)processSample(0.95f, &below);
+  expect(!below.clipped_l && !below.clipped_r, "threshold sample does not clip");
+  loopkit::MeterBlock above;
+  (void)processSample(0.951f, &above);
+  expect(above.clipped_l && above.clipped_r, "over-threshold sample reports clipping");
 }
 
 void testNaNAndOutOfRangeGainClamped() {
@@ -247,6 +287,7 @@ int main() {
   testGainAndMixing();
   testMuteAndSolo();
   testLimiterAndMeters();
+  testSaturationCurveIsContinuousAndMonotonic();
   testNaNAndOutOfRangeGainClamped();
   testSoloMuteEnabledPermutations();
   testFiniteOutputOnExtremeInput();

@@ -46,6 +46,8 @@ struct MeterBlock {
   float peak_r = 0.0f;
   float rms_l = 0.0f;
   float rms_r = 0.0f;
+  bool clipped_l = false;
+  bool clipped_r = false;
 };
 
 class Engine {

@@ -15,6 +15,8 @@ namespace {
 
 constexpr float kMinGain = 0.0f;
 constexpr float kMaxGain = 8.0f;
+constexpr float kSaturationThreshold = 0.95f;
+constexpr float kSaturationHeadroom = 1.0f - kSaturationThreshold;
 
 // Flush denormals to zero on the realtime audio path. Denormals can cost
 // orders of magnitude more CPU and are never audible; always undesirable here.
@@ -145,6 +147,8 @@ void Engine::process(const InputAudioBlock& app_in,
   float peak_r = 0.0f;
   double sum_squares_l = 0.0;
   double sum_squares_r = 0.0;
+  bool clipped_l = false;
+  bool clipped_r = false;
 
   for (uint32_t frame = 0; frame < frame_count; ++frame) {
     float mix_l = 0.0f;
@@ -162,6 +166,9 @@ void Engine::process(const InputAudioBlock& app_in,
 
     mix_l *= master_gain_;
     mix_r *= master_gain_;
+
+    clipped_l = clipped_l || std::abs(mix_l) > kSaturationThreshold;
+    clipped_r = clipped_r || std::abs(mix_r) > kSaturationThreshold;
 
     mix_l = softClip(mix_l);
     mix_r = softClip(mix_r);
@@ -191,6 +198,8 @@ void Engine::process(const InputAudioBlock& app_in,
         static_cast<float>(std::sqrt(sum_squares_l / static_cast<double>(frame_count)));
     meters_out->rms_r =
         static_cast<float>(std::sqrt(sum_squares_r / static_cast<double>(frame_count)));
+    meters_out->clipped_l = clipped_l;
+    meters_out->clipped_r = clipped_r;
   }
 }
 
@@ -226,12 +235,18 @@ bool Engine::hasAnySoloEnabled() const noexcept {
 }
 
 float Engine::softClip(float sample) noexcept {
-  // Smooth saturation that avoids a hard clipping edge in voice chat.
   const float abs_value = std::abs(sample);
-  if (abs_value <= 1.0f) {
+  if (abs_value <= kSaturationThreshold) {
     return sample;
   }
-  return sample / (1.0f + abs_value);
+
+  // Identity below the threshold, unit slope at the join, and an asymptote
+  // at full scale. This keeps overload continuous and monotonic instead of
+  // folding samples back toward zero.
+  const float excess = abs_value - kSaturationThreshold;
+  const float saturated = kSaturationThreshold
+      + kSaturationHeadroom * (1.0f - std::exp(-excess / kSaturationHeadroom));
+  return std::copysign(std::min(saturated, 1.0f), sample);
 }
 
 uint32_t Engine::frameCountForProcess(const InputAudioBlock& app_in,

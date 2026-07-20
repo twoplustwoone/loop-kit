@@ -72,6 +72,8 @@ void toCBlock(const loopkit::MeterBlock& in, lk_meter_block* out) {
   out->peak_r = in.peak_r;
   out->rms_l = in.rms_l;
   out->rms_r = in.rms_r;
+  out->clipped_l = in.clipped_l ? 1 : 0;
+  out->clipped_r = in.clipped_r ? 1 : 0;
 }
 
 }  // namespace
