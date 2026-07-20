@@ -281,7 +281,7 @@ private struct CaptureSourceRow: View {
   var body: some View {
     VStack(spacing: 8) {
       HStack(spacing: 8) {
-        Image(systemName: sourceIcon(app.displayName))
+        Image(systemName: SourcePresentation.symbol(for: app.displayName))
           .frame(width: 20)
           .foregroundStyle(app.selected ? LoopKitTheme.teal : LoopKitTheme.secondaryText)
         VStack(alignment: .leading, spacing: 1) {
@@ -359,7 +359,7 @@ private struct RoutingWorkspace: View {
 
   var body: some View {
     VStack(spacing: 0) {
-      RoutingPatchbay(model: model, selectedSourceID: $selectedSourceID)
+      RoutingGraph(model: model, selectedSourceID: $selectedSourceID)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
 
       if sourceControlsExpanded {
@@ -373,7 +373,7 @@ private struct RoutingWorkspace: View {
   }
 }
 
-private struct RoutingPatchbay: View {
+private struct RoutingGraph: View {
   @ObservedObject var model: LoopKitViewModel
   @Binding var selectedSourceID: String?
   @State private var draggingSourceID: String?
@@ -384,11 +384,11 @@ private struct RoutingPatchbay: View {
 
   var body: some View {
     GeometryReader { proxy in
-      let layout = PatchbayLayout(size: proxy.size, sourceCount: visibleSources.count)
+      let layout = RoutingGraphLayout(size: proxy.size, sourceCount: visibleSources.count)
 
       ZStack {
         LoopKitTheme.background
-        PatchbayGrid()
+        RoutingGraphGrid()
 
         TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
           let pulsePhase = CGFloat(timeline.date.timeIntervalSinceReferenceDate * 28)
@@ -455,7 +455,7 @@ private struct RoutingPatchbay: View {
           PatchNode(
             title: source.displayName,
             subtitle: source.id == "mic" ? "PHYSICAL INPUT" : "CAPTURE SOURCE",
-            icon: source.id == "mic" ? "mic" : sourceIcon(source.displayName),
+            icon: source.id == "mic" ? "mic" : SourcePresentation.symbol(for: source.displayName),
             meter: model.meter(for: source.id),
             isClipping: model.isClipping(source.id),
             isActive: source.enabled,
@@ -497,7 +497,7 @@ private struct RoutingPatchbay: View {
           RoutePort(color: LoopKitTheme.teal, highlighted: draggingSourceID == source.id)
             .position(layout.sourcePort(index: index))
             .gesture(
-              DragGesture(minimumDistance: 1, coordinateSpace: .named("routingPatchbay"))
+              DragGesture(minimumDistance: 1, coordinateSpace: .named("routingGraph"))
                 .onChanged { value in
                   draggingSourceID = source.id
                   dragLocation = value.location
@@ -539,7 +539,7 @@ private struct RoutingPatchbay: View {
         .padding(18)
       }
       .clipped()
-      .coordinateSpace(name: "routingPatchbay")
+      .coordinateSpace(name: "routingGraph")
     }
   }
 
@@ -576,7 +576,7 @@ private struct RoutingPatchbay: View {
   }
 }
 
-private struct PatchbayLayout {
+private struct RoutingGraphLayout {
   let size: CGSize
   let sourceCount: Int
   let nodeWidth: CGFloat = 190
@@ -640,7 +640,7 @@ private struct RoutePort: View {
   }
 }
 
-private struct PatchbayGrid: View {
+private struct RoutingGraphGrid: View {
   var body: some View {
     Canvas { context, size in
       var path = Path()
@@ -749,7 +749,7 @@ private struct SourceControlsRack: View {
       ForEach(model.sources, id: \.id) { source in
         LoopKitSourceStrip(
           name: source.displayName,
-          icon: source.id == "mic" ? "mic" : sourceIcon(source.displayName),
+          icon: source.id == "mic" ? "mic" : SourcePresentation.symbol(for: source.displayName),
           gain: sourceBinding(source, keyPath: \.gain),
           isMuted: sourceBinding(source, keyPath: \.mute),
           isSolo: sourceBinding(source, keyPath: \.solo),
@@ -991,15 +991,6 @@ private struct MasterSidebar: View {
     default: return LoopKitTheme.warning
     }
   }
-}
-
-private func sourceIcon(_ name: String) -> String {
-  let normalized = name.lowercased()
-  if normalized.contains("spotify") || normalized.contains("music") { return "music.note" }
-  if normalized.contains("safari") || normalized.contains("chrome") || normalized.contains("browser") { return "globe" }
-  if normalized.contains("discord") || normalized.contains("slack") { return "bubble.left.and.bubble.right" }
-  if normalized.contains("zoom") || normalized.contains("meet") { return "video" }
-  return "waveform"
 }
 
 #if DEBUG

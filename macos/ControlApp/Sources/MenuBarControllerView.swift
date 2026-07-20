@@ -289,7 +289,7 @@ private struct MenuCaptureRow: View {
 
   var body: some View {
     HStack(spacing: 10) {
-      Image(systemName: menuSourceIcon(app.displayName))
+      Image(systemName: SourcePresentation.symbol(for: app.displayName))
         .font(.system(size: 15, weight: .medium))
         .foregroundStyle(LoopKitTheme.teal)
         .frame(width: 30, height: 30)
@@ -336,14 +336,6 @@ private struct MenuCaptureRow: View {
     guard peak > 0 else { return "-inf" }
     return String(format: "%.0f dB", 20 * log10(peak))
   }
-}
-
-private func menuSourceIcon(_ name: String) -> String {
-  let normalized = name.lowercased()
-  if normalized.contains("spotify") || normalized.contains("music") { return "music.note" }
-  if normalized.contains("safari") || normalized.contains("chrome") { return "globe" }
-  if normalized.contains("discord") || normalized.contains("slack") { return "bubble.left" }
-  return "waveform"
 }
 
 #if DEBUG
