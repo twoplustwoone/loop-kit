@@ -211,6 +211,17 @@ final class LoopKitViewModel: ObservableObject {
     }
   }
 
+  func requestMicrophoneAccess() {
+    Task {
+      let result = await daemon.requestMicrophoneAccess()
+      lastActionMessage = result.success
+        ? "Microphone access granted"
+        : (result.message ?? "Microphone access was not granted")
+      await refreshStatus()
+      await reloadInputDevices()
+    }
+  }
+
   // MARK: Polling
 
   private func startStatusPolling() {
@@ -311,6 +322,14 @@ final class LoopKitViewModel: ObservableObject {
   // MARK: Derived view helpers
 
   func meter(for sourceID: String) -> LKXPCMeter? { meters[sourceID] }
+
+  var monitorDevices: [LKXPCDevice] {
+    outputDevices.filter {
+      $0.uid != "BlackHole2ch_UID"
+        && $0.uid != status?.activeBroadcastDeviceUID
+        && $0.name.localizedCaseInsensitiveCompare("BlackHole 2ch") != .orderedSame
+    }
+  }
 
   func hasRoute(sourceID: String, destinationID: String) -> Bool {
     routes.contains { $0.sourceID == sourceID && $0.destinationID == destinationID }

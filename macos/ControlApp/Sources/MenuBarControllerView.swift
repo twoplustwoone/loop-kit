@@ -28,7 +28,7 @@ struct MenuBarControllerView: View {
       Divider().overlay(LoopKitTheme.rim)
       footer
     }
-    .frame(width: 380, height: 560)
+    .frame(width: 360, height: 480)
     .background(LoopKitTheme.panel)
     .foregroundStyle(LoopKitTheme.text)
     .preferredColorScheme(.dark)
@@ -129,7 +129,7 @@ struct MenuBarControllerView: View {
         .buttonStyle(.plain)
         .popover(isPresented: $monitorPickerPresented, arrowEdge: .bottom) {
           VStack(alignment: .leading, spacing: 4) {
-            ForEach(model.outputDevices, id: \.uid) { device in
+            ForEach(model.monitorDevices, id: \.uid) { device in
               Button {
                 model.monitorDeviceUID = device.uid
                 model.applyMonitorDevice(device.uid)

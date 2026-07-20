@@ -20,10 +20,10 @@ struct LoopKitApp: App {
       } else if CommandLine.arguments.contains("--demo-dashboard") {
         ContentView(model: .demoModel(), startsServices: false)
       } else {
-        ContentView(model: model, startsServices: true)
+        ContentView(model: model, startsServices: true, showsFirstRunSetup: true)
       }
 #else
-      ContentView(model: model, startsServices: true)
+      ContentView(model: model, startsServices: true, showsFirstRunSetup: true)
 #endif
     }
 

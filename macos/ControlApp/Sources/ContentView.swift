@@ -6,26 +6,37 @@ import SwiftUI
 @MainActor
 struct ContentView: View {
   @StateObject private var model: LoopKitViewModel
+  @StateObject private var helperManager: LoopKitHelperManager
+  @AppStorage("LoopKitFirstRunSetupComplete") private var setupComplete = false
   @State private var sceneNameInput = ""
   @State private var diagnosticsExpanded = true
   @State private var sourceControlsExpanded = true
   @State private var selectedSourceID: String?
 
   private let startsServices: Bool
+  private let showsFirstRunSetup: Bool
 
   init() {
     _model = StateObject(wrappedValue: LoopKitViewModel())
+    _helperManager = StateObject(wrappedValue: LoopKitHelperManager())
     startsServices = true
+    showsFirstRunSetup = true
   }
 
-  init(model: LoopKitViewModel, startsServices: Bool) {
+  init(model: LoopKitViewModel, startsServices: Bool, showsFirstRunSetup: Bool = false) {
     _model = StateObject(wrappedValue: model)
+    _helperManager = StateObject(wrappedValue: LoopKitHelperManager())
     self.startsServices = startsServices
+    self.showsFirstRunSetup = showsFirstRunSetup
   }
 
   var body: some View {
     VStack(spacing: 0) {
-      DashboardTopBar(model: model, sourceControlsExpanded: $sourceControlsExpanded)
+      DashboardTopBar(
+        model: model,
+        sourceControlsExpanded: $sourceControlsExpanded,
+        onShowSetup: { setupComplete = false }
+      )
 
       HStack(spacing: 0) {
         SourcesSidebar(model: model)
@@ -61,6 +72,18 @@ struct ContentView: View {
       guard startsServices else { return }
       model.onDisappear()
     }
+    .sheet(
+      isPresented: Binding(
+        get: { showsFirstRunSetup && !setupComplete },
+        set: { if !$0 { setupComplete = true } }
+      )
+    ) {
+      FirstRunSetupView(
+        model: model,
+        helperManager: helperManager,
+        onComplete: { setupComplete = true }
+      )
+    }
   }
 }
 
@@ -69,6 +92,7 @@ struct ContentView: View {
 private struct DashboardTopBar: View {
   @ObservedObject var model: LoopKitViewModel
   @Binding var sourceControlsExpanded: Bool
+  let onShowSetup: () -> Void
 
   var body: some View {
     HStack(spacing: 14) {
@@ -111,6 +135,14 @@ private struct DashboardTopBar: View {
       .buttonStyle(.plain)
       .foregroundStyle(LoopKitTheme.secondaryText)
       .help("Reconnect to loopkitd")
+
+      Button(action: onShowSetup) {
+        Image(systemName: "questionmark.circle")
+          .frame(width: 30, height: 30)
+      }
+      .buttonStyle(.plain)
+      .foregroundStyle(LoopKitTheme.secondaryText)
+      .help("Open setup")
     }
     .padding(.horizontal, 20)
     .frame(height: 56)
@@ -170,7 +202,7 @@ private struct SourcesSidebar: View {
           title: "Monitor output",
           icon: "headphones",
           selection: $model.monitorDeviceUID,
-          devices: model.outputDevices,
+          devices: model.monitorDevices,
           onChange: model.applyMonitorDevice
         )
       }
@@ -891,11 +923,15 @@ private struct MasterSidebar: View {
     DisclosureGroup(isExpanded: $diagnosticsExpanded) {
       if let status = model.status {
         VStack(spacing: 6) {
+          diagnosticRow("Health", status.healthState.capitalized, color: healthColor(status.healthState))
           diagnosticRow("Capture", status.captureMode == LKCaptureModeProcessTap ? "Process Tap" : "Unavailable")
           diagnosticRow("Active taps", "\(status.activeTapCount)")
-          diagnosticRow("Tap U/O", "\(status.tapUnderruns) / \(status.tapOverruns)")
-          diagnosticRow("Monitor U/O", "\(status.monitorUnderruns) / \(status.monitorOverruns)")
-          diagnosticRow("Broadcast U/O", "\(status.broadcastUnderruns) / \(status.broadcastOverruns)")
+          diagnosticRow("Tap U/O", ratePair(status.tapUnderrunRate, status.tapOverrunRate))
+          diagnosticRow("Monitor U/O", ratePair(status.monitorUnderrunRate, status.monitorOverrunRate))
+          diagnosticRow("Broadcast U/O", ratePair(status.broadcastUnderrunRate, status.broadcastOverrunRate))
+          diagnosticRow("Monitor queue", percent(status.monitorQueueFill))
+          diagnosticRow("Broadcast queue", percent(status.broadcastQueueFill))
+          diagnosticRow("Scheduler gaps", "\(status.schedulerDiscontinuities)")
         }
         .padding(.top, 9)
       } else {
@@ -911,13 +947,33 @@ private struct MasterSidebar: View {
     }
   }
 
-  private func diagnosticRow(_ title: String, _ value: String) -> some View {
+  private func diagnosticRow(
+    _ title: String,
+    _ value: String,
+    color: Color = LoopKitTheme.teal
+  ) -> some View {
     HStack {
       Text(title).foregroundStyle(LoopKitTheme.secondaryText)
       Spacer()
-      Text(value).foregroundStyle(LoopKitTheme.teal)
+      Text(value).foregroundStyle(color)
     }
     .font(LoopKitTheme.mono(9))
+  }
+
+  private func ratePair(_ underruns: Double, _ overruns: Double) -> String {
+    String(format: "%.1f / %.1f s⁻¹", underruns, overruns)
+  }
+
+  private func percent(_ ratio: Double) -> String {
+    String(format: "%.0f%%", max(0, min(1, ratio)) * 100)
+  }
+
+  private func healthColor(_ state: String) -> Color {
+    switch state {
+    case LKHealthStateHealthy: return LoopKitTheme.signal
+    case LKHealthStateFault: return LoopKitTheme.error
+    default: return LoopKitTheme.warning
+    }
   }
 }
 
