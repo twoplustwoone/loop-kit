@@ -62,7 +62,8 @@
 - App: `com.twoplustwoone.LoopKit`
 - Helper and Mach service: `com.twoplustwoone.LoopKit.agent`
 - IPC protocol version: `2`, negotiated with `LKXPCHandshake` before the client becomes connected.
-- Release peers are authenticated by exact identifier, Apple signing anchor, and Team ID.
+- Community and Debug peers use identifier-only authentication because their signatures are ad-hoc.
+- Optional Developer ID releases require the exact peer identifier, Apple signing anchor, and matching Team ID.
 
 ## Scene schema
 

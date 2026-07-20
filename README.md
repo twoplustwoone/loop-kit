@@ -74,9 +74,9 @@ The runner accepts mono or stereo 16-bit PCM and 32-bit float WAVE input and wri
 
 ## Install for friends
 
-Tagged releases produce a universal, Developer ID-signed, notarized DMG. Mount it, drag LoopKit to Applications, launch it, and follow first-run setup. BlackHole 2ch remains a separate installation from its [official site](https://existential.audio/blackhole/).
+Tagged releases produce a universal **Community DMG** that is ad-hoc signed and does not require a paid Apple Developer membership. Mount it, drag LoopKit to Applications, and try to launch it. On the first launch, macOS will block the unnotarized app; follow [Apple's Open Anyway procedure](https://support.apple.com/102445), then complete LoopKit's first-run setup.
 
-There is no unsigned public fallback. If a release is not notarized and accepted by Gatekeeper, it is not published.
+Verify the release's SHA-256 checksum before opening it. BlackHole 2ch remains a separate installation from its [official site](https://existential.audio/blackhole/). See [Releasing LoopKit](docs/RELEASING.md) for the exact trust model and installation steps.
 
 ## Local developer install
 
@@ -99,7 +99,8 @@ To remove:
   as an error while microphone and other daemon functions remain available.
 - In Process Tap mode, LoopKit uses redirect-muted playback (`CATapMuted`): captured apps no longer
   play directly to speakers and are heard through LoopKit monitor output.
-- Release signing/notarization requires a Developer ID Application identity and App Store Connect API credentials.
+- Community releases are ad-hoc signed, not notarized, and require a one-time Gatekeeper override.
+- Optional Developer ID notarization tooling remains available but is not part of the default release workflow.
 - Automatic updates and crash reporting are intentionally deferred.
 
 LoopKit is available under the [MIT License](LICENSE). BlackHole is a separate project with its own license and release process.

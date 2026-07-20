@@ -89,7 +89,7 @@ The two LoopKit processes share the `LoopKitIPC` XPC contract. The daemon core r
 
 - **Editing Xcode projects by hand does nothing** — they're regenerated from `project.yml` on every `install_local.sh` run. Change the `.yml`.
 - **C++ interoperability propagates** — executable targets importing `LoopKitDaemonCore` need `SWIFT_OBJC_INTEROP_MODE: objcxx` in XcodeGen settings.
-- **Ad-hoc developer workflow** — project defaults use `CODE_SIGN_IDENTITY: "-"`; `scripts/release.sh` overrides this for Developer ID signing.
+- **Community releases are intentionally unnotarized** — `scripts/community_release.sh` ad-hoc signs universal artifacts and the default tag workflow publishes them without Apple credentials. `scripts/release.sh` is the unused optional Developer ID path.
 - **Scene schema lives in `docs/ARCHITECTURE.md`** and in `LKXPCScene` — keep them in sync when adding fields.
 - **Legacy XPC coding keys** still contain `discord` for rolling-restart compatibility; Swift-facing
   status properties use the domain term `broadcast`.

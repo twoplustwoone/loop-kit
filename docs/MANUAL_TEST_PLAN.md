@@ -3,11 +3,12 @@
 ## Setup
 
 1. Install BlackHole 2ch from its official project if it is not already present.
-2. Run `./installer/install_local.sh` for a developer build, or mount the signed release DMG and drag LoopKit to Applications.
-3. Launch `/Applications/LoopKit.app` and complete first-run setup without Terminal.
-4. Approve the LoopKit helper in Login Items if macOS requests it.
-5. Grant microphone access only from the explicit setup action.
-6. In Discord, set input device to `BlackHole 2ch`.
+2. Run `./installer/install_local.sh` for a developer build, or mount the Community DMG and drag LoopKit to Applications.
+3. For a Community DMG, confirm the initial Gatekeeper block and use **System Settings → Privacy & Security → Open Anyway** once. Do not disable Gatekeeper globally.
+4. Launch `/Applications/LoopKit.app` and complete first-run setup.
+5. Approve the LoopKit helper in Login Items if macOS requests it.
+6. Grant microphone access only from the explicit setup action.
+7. In Discord, set input device to `BlackHole 2ch`.
 
 ## Routing checks
 
@@ -59,4 +60,6 @@
 2. Confirm the helper has microphone and application-audio privacy descriptions.
 3. Confirm Finder, Dock, Launchpad, and app switcher show the LoopKit icon without transparency fringes.
 4. Confirm the custom glyph remains legible in both light and dark menu bars.
-5. Run `codesign --verify --deep --strict`, `spctl --assess`, and `stapler validate` on the release artifact.
+5. Confirm `codesign --verify --deep --strict` succeeds and both app/helper report `Signature=adhoc` with hardened runtime.
+6. Confirm `shasum -a 256 -c` accepts the published checksum.
+7. Confirm the Community build is not represented as notarized and that Gatekeeper requires the documented one-time override.
