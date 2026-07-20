@@ -300,6 +300,48 @@ final class LoopKitTests: XCTestCase {
         XCTAssertEqual(decision.warning, "Device unavailable")
     }
 
+    func testAudioProcessingSchedulePrimesAndTracksTime() {
+        var schedule = AudioProcessingSchedule(
+            sampleRate: 48_000,
+            blockFrames: 512,
+            leadFrames: 1_536,
+            maxCatchUpBlocks: 4
+        )
+
+        XCTAssertEqual(
+            schedule.advance(nowNanos: 1_000_000_000),
+            AudioScheduleDecision(blockCount: 3, discontinuity: false)
+        )
+        XCTAssertEqual(
+            schedule.advance(nowNanos: 1_005_333_333),
+            AudioScheduleDecision(blockCount: 0, discontinuity: false)
+        )
+        XCTAssertEqual(
+            schedule.advance(nowNanos: 1_011_000_000),
+            AudioScheduleDecision(blockCount: 1, discontinuity: false)
+        )
+    }
+
+    func testAudioProcessingScheduleBoundsCatchUp() {
+        var schedule = AudioProcessingSchedule(
+            sampleRate: 48_000,
+            blockFrames: 512,
+            leadFrames: 1_536,
+            maxCatchUpBlocks: 4
+        )
+        _ = schedule.advance(nowNanos: 1_000_000_000)
+
+        XCTAssertEqual(
+            schedule.advance(nowNanos: 2_000_000_000),
+            AudioScheduleDecision(blockCount: 4, discontinuity: true)
+        )
+        XCTAssertEqual(schedule.discontinuities, 1)
+        XCTAssertEqual(
+            schedule.advance(nowNanos: 2_000_000_000),
+            AudioScheduleDecision(blockCount: 0, discontinuity: false)
+        )
+    }
+
     func testOfflineWaveRoundTripAndMixer() throws {
         let input = try StereoAudio(
             sampleRate: 48_000,

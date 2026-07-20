@@ -53,6 +53,20 @@ void AsyncResampler::setRates(double input_rate, double output_rate) {
   }
 }
 
+void AsyncResampler::setTargetFillFrames(uint32_t frames) {
+  if (capacity_ == 0) {
+    return;
+  }
+  target_fill_ = clamp(
+      static_cast<double>(frames) / static_cast<double>(capacity_),
+      0.05,
+      0.95);
+}
+
+void AsyncResampler::setMaxRateCorrection(double fraction) {
+  max_rate_correction_ = clamp(fraction, 0.0, 0.05);
+}
+
 bool AsyncResampler::push(const float* left, const float* right, uint32_t frames) {
   if (left == nullptr || right == nullptr || frames == 0 || capacity_ == 0) {
     return false;
@@ -164,7 +178,10 @@ double AsyncResampler::baseRatio() const {
 double AsyncResampler::computeRatio(double fill_ratio) const {
   const double base = baseRatio();
   const double error = fill_ratio - target_fill_;
-  const double adjust = clamp(1.0 + kp_ * error, 0.995, 1.005);
+  const double adjust = clamp(
+      1.0 + kp_ * error,
+      1.0 - max_rate_correction_,
+      1.0 + max_rate_correction_);
   return base * adjust;
 }
 

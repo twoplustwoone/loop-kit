@@ -4,6 +4,9 @@ import LoopKitIPC
 import LoopKitEngine
 
 private let kProcessingFrames: UInt32 = 512
+private let kProcessingWakeFrames: UInt64 = 256
+private let kOutputLeadFrames: UInt64 = 1_536
+private let kMaxCatchUpBlocks = 4
 
 public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
   private static let micSourceID = "mic"
@@ -14,7 +17,10 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
   private static let kBlackHoleDeviceUID = "BlackHole2ch_UID"
   private static let kBlackHoleDeviceName = "BlackHole 2ch"
 
-  private let queue = DispatchQueue(label: "com.example.LoopKit.loopkitd.state")
+  private let queue = DispatchQueue(
+    label: "com.example.LoopKit.loopkitd.state",
+    qos: .userInteractive
+  )
   private let maintenanceQueue = DispatchQueue(
     label: "com.example.LoopKit.loopkitd.maintenance",
     qos: .utility
@@ -71,6 +77,13 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
   private var lastBroadcastRetry: Date = .distantPast
 
   private var nextFrameIndex: UInt64 = 0
+  private var processingSchedule = AudioProcessingSchedule(
+    sampleRate: 48_000,
+    blockFrames: UInt64(kProcessingFrames),
+    leadFrames: kOutputLeadFrames,
+    maxCatchUpBlocks: kMaxCatchUpBlocks
+  )
+  private var schedulerDiscontinuities: UInt64 = 0
   private var lastError: String?
 
   private var appBusLeft = [Float](repeating: 0, count: Int(kProcessingFrames))
@@ -552,17 +565,30 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
     processingTimer = nil
 
     let timer = DispatchSource.makeTimerSource(flags: .strict, queue: queue)
-    let tickNanoseconds = max(1_000_000, Int((Double(blockFrames) / Double(sampleRate)) * 1_000_000_000.0))
+    processingSchedule.reset()
+    nextFrameIndex = 0
+    let tickNanoseconds = max(
+      1_000_000,
+      Int((Double(kProcessingWakeFrames) / Double(sampleRate)) * 1_000_000_000.0)
+    )
     timer.schedule(
       deadline: .now(),
       repeating: .nanoseconds(tickNanoseconds),
       leeway: .nanoseconds(max(50_000, tickNanoseconds / 20))
     )
     timer.setEventHandler { [weak self] in
-      self?.processAudioTickLocked()
+      self?.processScheduledAudioLocked()
     }
     timer.resume()
     processingTimer = timer
+  }
+
+  private func processScheduledAudioLocked(nowNanos: UInt64 = DispatchTime.now().uptimeNanoseconds) {
+    let decision = processingSchedule.advance(nowNanos: nowNanos)
+    for _ in 0..<decision.blockCount {
+      processAudioTickLocked()
+    }
+    schedulerDiscontinuities = processingSchedule.discontinuities
   }
 
   private func startMaintenanceLoop() {
@@ -915,14 +941,14 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
     // Discord expects continuous audio even during silence, unlike the
     // idle-stoppable Monitor path.
     if broadcastOutputManager.isRunning() {
-      withStereoMutableBuffers(left: &broadcastLeft, right: &broadcastRight) { left, right in
+      _ = withStereoMutableBuffers(left: &broadcastLeft, right: &broadcastRight) { left, right in
         broadcastOutputManager.enqueueLeft(left, right: right, frames: frameCount)
       }
     }
 
     updateMonitorLifecycleLocked(mixMeter: monitorMeter)
     if monitorActive {
-      withStereoMutableBuffers(left: &monitorLeft, right: &monitorRight) { left, right in
+      _ = withStereoMutableBuffers(left: &monitorLeft, right: &monitorRight) { left, right in
         monitorOutputManager.enqueueLeft(left, right: right, frames: frameCount)
       }
     }

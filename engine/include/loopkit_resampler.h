@@ -12,6 +12,8 @@ class AsyncResampler {
 
   void reset();
   void setRates(double input_rate, double output_rate);
+  void setTargetFillFrames(uint32_t frames);
+  void setMaxRateCorrection(double fraction);
   [[nodiscard]] bool push(const float* left, const float* right, uint32_t frames);
   uint32_t pop(float* left, float* right, uint32_t frames);
   uint64_t underruns() const;
@@ -36,6 +38,7 @@ class AsyncResampler {
 
   double target_fill_ = 0.5;
   double kp_ = 0.02;
+  double max_rate_correction_ = 0.005;
 
   double baseRatio() const;
   double computeRatio(double fill_ratio) const;

@@ -16,7 +16,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (BOOL)activateDeviceWithUID:(NSString*)deviceUID;
 - (void)stop;
-- (void)enqueueLeft:(const float*)left right:(const float*)right frames:(uint32_t)frames;
+- (BOOL)enqueueLeft:(const float*)left right:(const float*)right frames:(uint32_t)frames;
 - (NSString*)activeDeviceUID;
 - (BOOL)isRunning;
 - (NSString*)healthWarning;
@@ -24,6 +24,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (uint64_t)overrunCount;
 - (uint64_t)underrunCount;
 - (double)deviceSampleRate;
+- (uint32_t)bufferedFrames;
+- (double)queueFillRatio;
 
 @end
 

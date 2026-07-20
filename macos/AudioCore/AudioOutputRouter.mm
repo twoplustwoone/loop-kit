@@ -3,138 +3,22 @@
 #import <AudioToolbox/AudioToolbox.h>
 #import <CoreAudio/AudioHardware.h>
 
+#include "loopkit_resampler.h"
+
 #include <algorithm>
 #include <array>
-#include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <mutex>
+#include <memory>
 #include <string>
 #include <vector>
 
 namespace {
 
-constexpr uint32_t kRingCapacityFrames = 4096;
-constexpr uint32_t kRingMask = kRingCapacityFrames - 1;
-constexpr uint32_t kOutputPrerollFrames = 1024;
-static_assert((kRingCapacityFrames & (kRingCapacityFrames - 1)) == 0, "Ring capacity must be power-of-two");
-static_assert(kOutputPrerollFrames < kRingCapacityFrames, "Output preroll must fit in the ring");
-
-struct StereoFrameRing {
-  std::array<float, kRingCapacityFrames> left{};
-  std::array<float, kRingCapacityFrames> right{};
-  std::atomic<uint64_t> writeFrames{0};
-  std::atomic<uint64_t> readFrames{0};
-  std::atomic<uint64_t> overruns{0};
-  std::atomic<uint64_t> underruns{0};
-
-  void reset() {
-    const uint64_t write = writeFrames.load(std::memory_order_acquire);
-    readFrames.store(write, std::memory_order_release);
-  }
-
-  bool push(const float* inputLeft, const float* inputRight, uint32_t frames) {
-    if (inputLeft == nullptr || inputRight == nullptr || frames == 0) {
-      return false;
-    }
-
-    uint64_t write = writeFrames.load(std::memory_order_relaxed);
-    uint64_t read = readFrames.load(std::memory_order_acquire);
-    const uint64_t capacity = kRingCapacityFrames;
-
-    if (frames >= capacity) {
-      const uint32_t keep = static_cast<uint32_t>(capacity);
-      inputLeft += (frames - keep);
-      inputRight += (frames - keep);
-      frames = keep;
-      read = write;
-      overruns.fetch_add(1, std::memory_order_relaxed);
-    } else {
-      const uint64_t used = write - read;
-      const uint64_t available = capacity - used;
-      if (frames > available) {
-        const uint64_t drop = static_cast<uint64_t>(frames) - available;
-        read += drop;
-        overruns.fetch_add(1, std::memory_order_relaxed);
-      }
-    }
-
-    readFrames.store(read, std::memory_order_release);
-
-    for (uint32_t i = 0; i < frames; ++i) {
-      const uint32_t index = static_cast<uint32_t>((write + i) & kRingMask);
-      left[index] = inputLeft[i];
-      right[index] = inputRight[i];
-    }
-    writeFrames.store(write + frames, std::memory_order_release);
-    return true;
-  }
-
-  uint32_t popNonInterleaved(float* outputLeft, float* outputRight, uint32_t frames) {
-    if (outputLeft == nullptr || outputRight == nullptr || frames == 0) {
-      return 0;
-    }
-
-    const uint64_t read = readFrames.load(std::memory_order_relaxed);
-    const uint64_t write = writeFrames.load(std::memory_order_acquire);
-    const uint32_t available = static_cast<uint32_t>(std::min<uint64_t>(write - read, frames));
-
-    for (uint32_t i = 0; i < available; ++i) {
-      const uint32_t index = static_cast<uint32_t>((read + i) & kRingMask);
-      outputLeft[i] = left[index];
-      outputRight[i] = right[index];
-    }
-    for (uint32_t i = available; i < frames; ++i) {
-      outputLeft[i] = 0.0f;
-      outputRight[i] = 0.0f;
-    }
-
-    if (available < frames) {
-      underruns.fetch_add(1, std::memory_order_relaxed);
-    }
-
-    readFrames.store(read + available, std::memory_order_release);
-    return available;
-  }
-
-  uint32_t popInterleaved(float* output, uint32_t frames, uint32_t channels) {
-    if (output == nullptr || frames == 0 || channels == 0) {
-      return 0;
-    }
-
-    const uint64_t read = readFrames.load(std::memory_order_relaxed);
-    const uint64_t write = writeFrames.load(std::memory_order_acquire);
-    const uint32_t available = static_cast<uint32_t>(std::min<uint64_t>(write - read, frames));
-
-    for (uint32_t frame = 0; frame < available; ++frame) {
-      const uint32_t index = static_cast<uint32_t>((read + frame) & kRingMask);
-      const float l = left[index];
-      const float r = right[index];
-      if (channels == 1) {
-        output[frame] = (l + r) * 0.5f;
-      } else {
-        output[frame * channels] = l;
-        output[frame * channels + 1] = r;
-        for (uint32_t ch = 2; ch < channels; ++ch) {
-          output[frame * channels + ch] = 0.0f;
-        }
-      }
-    }
-    for (uint32_t frame = available; frame < frames; ++frame) {
-      for (uint32_t ch = 0; ch < channels; ++ch) {
-        output[frame * channels + ch] = 0.0f;
-      }
-    }
-
-    if (available < frames) {
-      underruns.fetch_add(1, std::memory_order_relaxed);
-    }
-
-    readFrames.store(read + available, std::memory_order_release);
-    return available;
-  }
-};
+constexpr uint32_t kRingCapacityFrames = 8192;
+constexpr uint32_t kOutputTargetFrames = 1536;
 
 NSString* statusDescription(OSStatus status) {
   const uint32_t code = static_cast<uint32_t>(status);
@@ -323,7 +207,9 @@ uint32_t monitorMaxSliceFrames(AudioDeviceID deviceID, double streamSampleRate, 
   std::string label_;
   double sampleRate_;
   uint32_t maxFrames_;
-  StereoFrameRing ring_;
+  std::unique_ptr<loopkit::AsyncResampler> resampler_;
+  std::vector<float> renderScratchLeft_;
+  std::vector<float> renderScratchRight_;
   std::atomic<int32_t> lastRenderError_;
 }
 
@@ -465,7 +351,9 @@ static OSStatus monitorOutputRenderCallback(void* inRefCon,
   }
 
   AudioStreamBasicDescription asbd{};
-  asbd.mSampleRate = sampleRate_;
+  double deviceSampleRate = sampleRate_;
+  (void)readDeviceNominalSampleRate(targetDeviceID, &deviceSampleRate);
+  asbd.mSampleRate = deviceSampleRate;
   asbd.mFormatID = kAudioFormatLinearPCM;
   asbd.mFormatFlags = kAudioFormatFlagsNativeFloatPacked;
   asbd.mBitsPerChannel = 32;
@@ -487,7 +375,7 @@ static OSStatus monitorOutputRenderCallback(void* inRefCon,
   }
 
   // Keep this comfortably above the hardware callback size, including sample-rate conversion.
-  UInt32 maxSliceFrames = monitorMaxSliceFrames(targetDeviceID, sampleRate_, maxFrames_);
+  UInt32 maxSliceFrames = monitorMaxSliceFrames(targetDeviceID, deviceSampleRate, maxFrames_);
   status = AudioUnitSetProperty(unit,
                                 kAudioUnitProperty_MaximumFramesPerSlice,
                                 kAudioUnitScope_Global,
@@ -522,13 +410,13 @@ static OSStatus monitorOutputRenderCallback(void* inRefCon,
     return NO;
   }
 
-  // The producer is a strict dispatch timer while the consumer is driven by
-  // the hardware clock. Starting with an empty ring makes ordinary scheduling
-  // jitter audible as repeated zero-filled callbacks. Prime a modest cushion
-  // before the first hardware callback; subsequent audio remains FIFO ordered.
-  ring_.reset();
-  std::array<float, kOutputPrerollFrames> silence{};
-  ring_.push(silence.data(), silence.data(), kOutputPrerollFrames);
+  resampler_ = std::make_unique<loopkit::AsyncResampler>(sampleRate_, deviceSampleRate, kRingCapacityFrames);
+  resampler_->setTargetFillFrames(kOutputTargetFrames);
+  resampler_->setMaxRateCorrection(0.005);
+  renderScratchLeft_.assign(maxSliceFrames, 0.0f);
+  renderScratchRight_.assign(maxSliceFrames, 0.0f);
+  std::array<float, kOutputTargetFrames> silence{};
+  (void)resampler_->push(silence.data(), silence.data(), kOutputTargetFrames);
 
   status = AudioOutputUnitStart(unit);
   if (status != noErr) {
@@ -556,16 +444,18 @@ static OSStatus monitorOutputRenderCallback(void* inRefCon,
   [self stopLocked];
 }
 
-- (void)enqueueLeft:(const float*)left right:(const float*)right frames:(uint32_t)frames {
+- (BOOL)enqueueLeft:(const float*)left right:(const float*)right frames:(uint32_t)frames {
   if (left == nullptr || right == nullptr || frames == 0) {
-    return;
+    return NO;
   }
-  if (!ring_.push(left, right, frames)) {
+  if (resampler_ == nullptr || !resampler_->push(left, right, frames)) {
     std::lock_guard<std::mutex> lock(stateMutex_);
     if (lastError_.empty()) {
       [self setLastErrorLocked:[NSString stringWithFormat:@"%@ output queue overrun", [self labelNS]]];
     }
+    return NO;
   }
+  return YES;
 }
 
 - (NSString*)activeDeviceUID {
@@ -608,11 +498,19 @@ static OSStatus monitorOutputRenderCallback(void* inRefCon,
 }
 
 - (uint64_t)overrunCount {
-  return ring_.overruns.load(std::memory_order_relaxed);
+  return resampler_ == nullptr ? 0 : resampler_->overruns();
 }
 
 - (uint64_t)underrunCount {
-  return ring_.underruns.load(std::memory_order_relaxed);
+  return resampler_ == nullptr ? 0 : resampler_->underruns();
+}
+
+- (uint32_t)bufferedFrames {
+  return resampler_ == nullptr ? 0 : resampler_->bufferedFrames();
+}
+
+- (double)queueFillRatio {
+  return resampler_ == nullptr ? 0.0 : resampler_->fillRatio();
 }
 
 - (OSStatus)renderToOutput:(AudioBufferList*)ioData frames:(UInt32)frameCount {
@@ -625,8 +523,8 @@ static OSStatus monitorOutputRenderCallback(void* inRefCon,
     AudioBuffer& rightBuffer = ioData->mBuffers[1];
     float* left = static_cast<float*>(leftBuffer.mData);
     float* right = static_cast<float*>(rightBuffer.mData);
-    if (left != nullptr && right != nullptr) {
-      ring_.popNonInterleaved(left, right, frameCount);
+    if (left != nullptr && right != nullptr && resampler_ != nullptr) {
+      resampler_->pop(left, right, frameCount);
     } else {
       if (leftBuffer.mData != nullptr && leftBuffer.mDataByteSize > 0) {
         std::memset(leftBuffer.mData, 0, leftBuffer.mDataByteSize);
@@ -641,8 +539,19 @@ static OSStatus monitorOutputRenderCallback(void* inRefCon,
     AudioBuffer& buffer = ioData->mBuffers[0];
     float* out = static_cast<float*>(buffer.mData);
     const uint32_t channels = std::max<uint32_t>(buffer.mNumberChannels, 1);
-    if (out != nullptr) {
-      ring_.popInterleaved(out, frameCount, channels);
+    if (out != nullptr && resampler_ != nullptr && frameCount <= renderScratchLeft_.size()) {
+      resampler_->pop(renderScratchLeft_.data(), renderScratchRight_.data(), frameCount);
+      for (uint32_t frame = 0; frame < frameCount; ++frame) {
+        if (channels == 1) {
+          out[frame] = (renderScratchLeft_[frame] + renderScratchRight_[frame]) * 0.5f;
+        } else {
+          out[frame * channels] = renderScratchLeft_[frame];
+          out[frame * channels + 1] = renderScratchRight_[frame];
+          for (uint32_t channel = 2; channel < channels; ++channel) {
+            out[frame * channels + channel] = 0.0f;
+          }
+        }
+      }
     } else if (buffer.mDataByteSize > 0) {
       std::memset(buffer.mData, 0, buffer.mDataByteSize);
     }
@@ -668,7 +577,9 @@ static OSStatus monitorOutputRenderCallback(void* inRefCon,
   }
   activeDeviceID_ = kAudioObjectUnknown;
   activeDeviceUID_.clear();
-  ring_.reset();
+  resampler_.reset();
+  renderScratchLeft_.clear();
+  renderScratchRight_.clear();
 }
 
 - (void)setLastErrorLocked:(NSString*)message {
