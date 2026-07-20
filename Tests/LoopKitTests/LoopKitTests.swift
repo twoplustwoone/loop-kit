@@ -9,6 +9,22 @@ final class LoopKitTests: XCTestCase {
 
     func testPermanentProductIdentity() {
         XCTAssertEqual(LoopKitDaemonMachService, "com.twoplustwoone.LoopKit.agent")
+        XCTAssertEqual(
+            LoopKitCodeSigningRequirement.debug(identifier: LoopKitCodeSigningRequirement.appIdentifier),
+            "identifier \"com.twoplustwoone.LoopKit\""
+        )
+        XCTAssertNil(
+            LoopKitCodeSigningRequirement.release(
+                identifier: LoopKitCodeSigningRequirement.agentIdentifier,
+                teamIdentifier: ""
+            )
+        )
+        let release = LoopKitCodeSigningRequirement.release(
+            identifier: LoopKitCodeSigningRequirement.agentIdentifier,
+            teamIdentifier: "ABCDE12345"
+        )
+        XCTAssertTrue(release?.contains("anchor apple generic") == true)
+        XCTAssertTrue(release?.contains("certificate leaf[subject.OU] = \"ABCDE12345\"") == true)
     }
 
     func testDaemonConstructionDoesNotStartHardware() {

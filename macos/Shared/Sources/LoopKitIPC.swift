@@ -17,6 +17,22 @@ public let LKPermissionStateNotRequested = "notRequested"
 public let LKPermissionStateGranted = "granted"
 public let LKPermissionStateDenied = "denied"
 
+public enum LoopKitCodeSigningRequirement {
+  public static let appIdentifier = "com.twoplustwoone.LoopKit"
+  public static let agentIdentifier = "com.twoplustwoone.LoopKit.agent"
+
+  public static func debug(identifier: String) -> String {
+    "identifier \"\(identifier)\""
+  }
+
+  public static func release(identifier: String, teamIdentifier: String?) -> String? {
+    guard let teamIdentifier = teamIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines),
+          !teamIdentifier.isEmpty
+    else { return nil }
+    return "identifier \"\(identifier)\" and anchor apple generic and certificate leaf[subject.OU] = \"\(teamIdentifier)\""
+  }
+}
+
 public enum LoopKitCapability {
   public static let processTap = "process-tap"
   public static let microphonePermission = "microphone-permission"

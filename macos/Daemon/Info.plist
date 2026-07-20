@@ -22,6 +22,8 @@
   <string>$(CURRENT_PROJECT_VERSION)</string>
   <key>LSMinimumSystemVersion</key>
   <string>$(MACOSX_DEPLOYMENT_TARGET)</string>
+  <key>LoopKitTeamIdentifier</key>
+  <string>$(DEVELOPMENT_TEAM)</string>
   <key>NSAudioCaptureUsageDescription</key>
   <string>LoopKit captures audio only from applications you explicitly select.</string>
   <key>NSMicrophoneUsageDescription</key>

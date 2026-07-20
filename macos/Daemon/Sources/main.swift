@@ -21,6 +21,20 @@ final class LoopKitDaemonDelegate: NSObject, NSXPCListenerDelegate {
 
 let delegate = LoopKitDaemonDelegate()
 let listener = NSXPCListener(machServiceName: LoopKitDaemonMachService)
+#if DEBUG
+listener.setConnectionCodeSigningRequirement(
+  LoopKitCodeSigningRequirement.debug(identifier: LoopKitCodeSigningRequirement.appIdentifier)
+)
+#else
+let teamIdentifier = Bundle.main.object(forInfoDictionaryKey: "LoopKitTeamIdentifier") as? String
+guard let appRequirement = LoopKitCodeSigningRequirement.release(
+  identifier: LoopKitCodeSigningRequirement.appIdentifier,
+  teamIdentifier: teamIdentifier
+) else {
+  fatalError("LoopKit agent is missing its release Team ID")
+}
+listener.setConnectionCodeSigningRequirement(appRequirement)
+#endif
 listener.delegate = delegate
 listener.resume()
 delegate.start()

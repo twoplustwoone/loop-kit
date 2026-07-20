@@ -26,6 +26,21 @@ actor LoopKitDaemonClient {
     notify(.connecting)
     connection?.invalidate()
     let conn = NSXPCConnection(machServiceName: LoopKitDaemonMachService, options: [])
+#if DEBUG
+    conn.setCodeSigningRequirement(
+      LoopKitCodeSigningRequirement.debug(identifier: LoopKitCodeSigningRequirement.agentIdentifier)
+    )
+#else
+    let teamIdentifier = Bundle.main.object(forInfoDictionaryKey: "LoopKitTeamIdentifier") as? String
+    guard let requirement = LoopKitCodeSigningRequirement.release(
+      identifier: LoopKitCodeSigningRequirement.agentIdentifier,
+      teamIdentifier: teamIdentifier
+    ) else {
+      handleInvalidation(reason: "LoopKit is missing its release Team ID")
+      return
+    }
+    conn.setCodeSigningRequirement(requirement)
+#endif
     let interface = NSXPCInterface(with: LoopKitDaemonXPCProtocol.self)
     configureLoopKitXPCInterface(interface)
     conn.remoteObjectInterface = interface

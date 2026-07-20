@@ -21,7 +21,7 @@ final class LoopKitHelperManager: ObservableObject {
   private let fileManager: FileManager
 
   init(
-    service: SMAppService = .agent(plistName: launchAgentPlistName),
+    service: SMAppService = .agent(plistName: "com.twoplustwoone.LoopKit.agent.plist"),
     fileManager: FileManager = .default
   ) {
     self.service = service

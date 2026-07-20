@@ -46,6 +46,7 @@ targets:
       SWIFT_VERSION: 5.10
       CODE_SIGN_IDENTITY: "-"
       INFOPLIST_KEY_CFBundleDisplayName: LoopKit
+      INFOPLIST_KEY_LoopKitTeamIdentifier: $(DEVELOPMENT_TEAM)
     dependencies:
       - target: LoopKitAgent
       - package: LoopKit
