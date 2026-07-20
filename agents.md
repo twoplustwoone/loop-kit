@@ -4,7 +4,7 @@ This file provides guidance to AI Coding Agents when working with code in this r
 
 ## What this is
 
-LoopKit is a self-hosted macOS loopback stack for Discord-style sessions. The ControlApp and `loopkitd` daemon share local SwiftPM modules; the daemon captures app/microphone audio, mixes it with the C++ engine, and writes the Broadcast mix to BlackHole 2ch. Target platform is macOS 14+ (Process Tap capture requires 14.2+).
+LoopKit is a self-hosted macOS loopback stack for Discord-style sessions. The ControlApp and `loopkitd` helper share local SwiftPM modules; the helper captures app/microphone audio, mixes it with the C++ engine, and writes the Broadcast mix to BlackHole 2ch. Target platform is macOS 14.2+.
 
 ## Build / test
 
@@ -28,13 +28,13 @@ swift test
 Offline WAVE DSP runner:
 
 ```bash
-swift run loopkit_offline_dsp input.wav output.wav --gain 0.8
+swift run loopkit_offline_dsp app.wav output.wav --mic-input mic.wav --app-gain 0.8
 ```
 
-Full macOS stack (daemon + SwiftUI app + BlackHole 2ch) — requires `xcodegen`, `xcodebuild`, `cmake`, and `ctest`; first-time BlackHole installation may require `sudo`:
+Full macOS stack (embedded helper + SwiftUI app) — requires `xcodegen`, `xcodebuild`, `cmake`, and `ctest`. BlackHole is an external prerequisite and is never installed or removed by these scripts:
 
 ```bash
-./installer/install_local.sh    # builds/tests, generates Xcode projects, builds and installs daemon/app
+./installer/install_local.sh    # builds/tests and installs the combined development app
 ./installer/uninstall_local.sh
 ```
 
@@ -68,11 +68,11 @@ The two LoopKit processes share the `LoopKitIPC` XPC contract. The daemon core r
 
 1. **Engine (`engine/`, SwiftPM product `LoopKitEngine`)** — realtime C++17 mixer. Two sources (app, mic), each with gain/mute/solo/enabled, plus master gain, soft clip, peak/rms meters. Swift talks to its C API (`loopkit_c_api.h`) through module imports and Swift C++ interoperability; there is no bridging header.
 
-2. **IPC (`macos/Shared/Sources/LoopKitIPC.swift`, SwiftPM product `LoopKitIPC`)** — sole source of truth for the XPC protocol, secure-coding DTOs, and `configureLoopKitXPCInterface`. Any protocol change must update both processes together; there is no version negotiation.
+2. **IPC (`macos/Shared/Sources/LoopKitIPC.swift`, SwiftPM product `LoopKitIPC`)** — sole source of truth for the XPC protocol, secure-coding DTOs, and `configureLoopKitXPCInterface`. Any protocol change must update both processes together; the initial handshake rejects incompatible versions.
 
 3. **AudioCore (`macos/AudioCore/`, SwiftPM product `LoopKitAudioCore`)** — Objective-C++ hardware boundary containing Process Tap capture, microphone capture, and AUHAL output routing.
 
-4. **Daemon (`macos/Daemon/` + `macos/DaemonCore/`)** — the executable is a thin mach-service shell; `LoopKitDaemonCore` owns:
+4. **Daemon (`macos/Daemon/` + `macos/DaemonCore/`)** — the embedded executable is a thin authenticated XPC shell; `LoopKitDaemonRuntime` owns:
    - All control state + scene persistence (`~/Library/Application Support/LoopKit/scenes/*.json`).
    - **Application capture**: `ProcessTapManager.mm` provides per-bundle-ID Process Tap capture with
      `CATapMuted` redirect-muted playback on macOS 14.2+. There is no implicit virtual-device capture
@@ -81,7 +81,7 @@ The two LoopKit processes share the `LoopKitIPC` XPC contract. The daemon core r
    - Monitor output (`AudioOutputRouter.mm`) with automatic failover to system default if the selected device disappears.
    - The DSP render loop, physical microphone input, BlackHole 2ch Broadcast adapter, and physical Monitor output.
 
-5. **ControlApp (`macos/ControlApp/`)** — SwiftUI. `LoopKitDaemonClient.swift` is the XPC client, `LoopKitViewModel.swift` polls `getStatus` / `subscribeMeters`. It imports only `LoopKitIPC` and has no direct engine or hardware access.
+5. **ControlApp (`macos/ControlApp/`)** — SwiftUI. `LoopKitDaemonClient.swift` is the XPC client, `LoopKitViewModel.swift` polls `getStatus` / `subscribeMeters`, and `LoopKitHelperManager` owns SMAppService registration. It imports `LoopKitIPC` and hardware-independent `LoopKitUI`, with no direct engine or hardware access.
 
 6. **SceneStore (`macos/DaemonCore/SceneStore.swift`)** — JSON persistence isolated from daemon lifecycle and hardware so it can be exercised by `swift test`.
 
@@ -89,8 +89,8 @@ The two LoopKit processes share the `LoopKitIPC` XPC contract. The daemon core r
 
 - **Editing Xcode projects by hand does nothing** — they're regenerated from `project.yml` on every `install_local.sh` run. Change the `.yml`.
 - **C++ interoperability propagates** — executable targets importing `LoopKitDaemonCore` need `SWIFT_OBJC_INTEROP_MODE: objcxx` in XcodeGen settings.
-- **Unsigned personal workflow** — the targets use `CODE_SIGN_IDENTITY: "-"`. This is intentional; do not add signing identities without being asked.
+- **Ad-hoc developer workflow** — project defaults use `CODE_SIGN_IDENTITY: "-"`; `scripts/release.sh` overrides this for Developer ID signing.
 - **Scene schema lives in `docs/ARCHITECTURE.md`** and in `LKXPCScene` — keep them in sync when adding fields.
 - **Legacy XPC coding keys** still contain `discord` for rolling-restart compatibility; Swift-facing
   status properties use the domain term `broadcast`.
-- The `com.example.LoopKit.*` bundle IDs and mach service name are hardcoded across `project.yml`, `LoopKitIPC.swift`, and the launch agent plist — renaming requires touching all three.
+- Product identities are `com.twoplustwoone.LoopKit` and `com.twoplustwoone.LoopKit.agent`. The remaining `com.example` strings exist only for legacy-install cleanup and compatibility tests.
