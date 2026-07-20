@@ -82,7 +82,7 @@ struct MenuBarControllerView: View {
       HStack {
         compactLabel("MASTER OUTPUT")
         Spacer()
-        Text(String(format: "%.2fx", model.masterGain))
+        Text(loopKitDecibelString(model.masterGain))
           .font(LoopKitTheme.mono(11, weight: .medium))
           .foregroundStyle(LoopKitTheme.teal)
       }
@@ -182,6 +182,7 @@ struct MenuBarControllerView: View {
             MenuCaptureRow(
               app: app,
               meter: model.meter(for: app.sourceID),
+              isClipping: model.isClipping(app.sourceID),
               onToggle: { model.setCaptureSelected(bundleID: app.bundleID, isSelected: $0) }
             )
           }
@@ -283,6 +284,7 @@ struct MenuBarControllerView: View {
 private struct MenuCaptureRow: View {
   let app: LKXPCCaptureApp
   let meter: LKXPCMeter?
+  let isClipping: Bool
   let onToggle: (Bool) -> Void
 
   var body: some View {
@@ -304,7 +306,11 @@ private struct MenuCaptureRow: View {
             .font(LoopKitTheme.mono(8))
             .foregroundStyle(LoopKitTheme.secondaryText)
         }
-        LoopKitStereoMeter(left: meter?.peakL ?? 0, right: meter?.peakR ?? 0)
+        LoopKitStereoMeter(
+          left: meter?.peakL ?? 0,
+          right: meter?.peakR ?? 0,
+          isClipping: isClipping
+        )
           .frame(height: 7)
       }
 

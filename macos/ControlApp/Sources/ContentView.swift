@@ -222,6 +222,7 @@ private struct SourcesSidebar: View {
         CaptureSourceRow(
           app: app,
           meter: model.meter(for: app.sourceID),
+          isClipping: model.isClipping(app.sourceID),
           onToggle: { model.setCaptureSelected(bundleID: app.bundleID, isSelected: $0) }
         )
       }
@@ -274,6 +275,7 @@ private struct EmptySourcesState: View {
 private struct CaptureSourceRow: View {
   let app: LKXPCCaptureApp
   let meter: LKXPCMeter?
+  let isClipping: Bool
   let onToggle: (Bool) -> Void
 
   var body: some View {
@@ -301,7 +303,8 @@ private struct CaptureSourceRow: View {
 
       LoopKitStereoMeter(
         left: meter?.peakL ?? 0,
-        right: meter?.peakR ?? 0
+        right: meter?.peakR ?? 0,
+        isClipping: isClipping
       )
       .frame(height: 8)
       .opacity(app.selected ? 1 : 0.25)
@@ -454,6 +457,7 @@ private struct RoutingPatchbay: View {
             subtitle: source.id == "mic" ? "PHYSICAL INPUT" : "CAPTURE SOURCE",
             icon: source.id == "mic" ? "mic" : sourceIcon(source.displayName),
             meter: model.meter(for: source.id),
+            isClipping: model.isClipping(source.id),
             isActive: source.enabled,
             isSelected: selectedSourceID == source.id,
             portOnLeadingEdge: false
@@ -468,6 +472,7 @@ private struct RoutingPatchbay: View {
           subtitle: model.deviceName(uid: model.monitorDeviceUID),
           icon: "headphones",
           meter: nil,
+          isClipping: false,
           isActive: model.status?.monitorFallbackActive == false,
           isSelected: false,
           portOnLeadingEdge: true
@@ -480,6 +485,7 @@ private struct RoutingPatchbay: View {
           subtitle: "BLACKHOLE 2CH",
           icon: "dot.radiowaves.left.and.right",
           meter: nil,
+          isClipping: false,
           isActive: model.broadcastOutputReady,
           isSelected: false,
           portOnLeadingEdge: true
@@ -656,6 +662,7 @@ private struct PatchNode: View {
   let subtitle: String
   let icon: String
   let meter: LKXPCMeter?
+  let isClipping: Bool
   let isActive: Bool
   let isSelected: Bool
   let portOnLeadingEdge: Bool
@@ -677,7 +684,11 @@ private struct PatchNode: View {
             .foregroundStyle(LoopKitTheme.secondaryText)
             .lineLimit(1)
           if meter != nil {
-            LoopKitStereoMeter(left: meter?.peakL ?? 0, right: meter?.peakR ?? 0)
+            LoopKitStereoMeter(
+              left: meter?.peakL ?? 0,
+              right: meter?.peakR ?? 0,
+              isClipping: isClipping
+            )
               .frame(height: 7)
           }
         }
@@ -745,6 +756,7 @@ private struct SourceControlsRack: View {
           isEnabled: sourceBinding(source, keyPath: \.enabled),
           peakLeft: model.meter(for: source.id)?.peakL ?? 0,
           peakRight: model.meter(for: source.id)?.peakR ?? 0,
+          isClipping: model.isClipping(source.id),
           onEditingChanged: { editing in
             model.interactingSourceID = editing ? source.id : nil
             if !editing { model.applySource(source) }
@@ -780,19 +792,23 @@ private struct MasterSidebar: View {
   @Binding var sceneNameInput: String
   @Binding var diagnosticsExpanded: Bool
 
-  private var masterPeakLeft: Double { model.meters.values.map(\.peakL).max() ?? 0 }
-  private var masterPeakRight: Double { model.meters.values.map(\.peakR).max() ?? 0 }
+  private var masterMeter: LKXPCMeter? { model.meter(for: LKMeterSourceBroadcastMix) }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 18) {
         HStack(alignment: .top) {
           LoopKitSectionLabel("Master mixer", subtitle: "Broadcast + Monitor")
           Spacer()
-          LoopKitStatusPill(String(format: "%.2fx", model.masterGain))
+          LoopKitStatusPill(loopKitDecibelString(model.masterGain))
         }
 
         HStack(alignment: .center, spacing: 16) {
-          LoopKitStereoMeter(left: masterPeakLeft, right: masterPeakRight, isVertical: true)
+          LoopKitStereoMeter(
+            left: masterMeter?.peakL ?? 0,
+            right: masterMeter?.peakR ?? 0,
+            isVertical: true,
+            isClipping: model.isClipping(LKMeterSourceBroadcastMix)
+          )
             .frame(width: 34, height: 210)
 
           LoopKitVerticalFader(

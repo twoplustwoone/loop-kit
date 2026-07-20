@@ -15,6 +15,7 @@ final class LoopKitViewModel: ObservableObject {
   @Published var sources: [LKXPCSourceState] = []
   @Published var routes: [LKXPCRoute] = []
   @Published var meters: [String: LKXPCMeter] = [:]
+  @Published private(set) var clippingSourceIDs: Set<String> = []
   @Published var status: LKXPCStatus?
   @Published var scenes: [String] = []
   @Published var selectedSceneName: String = ""
@@ -39,6 +40,7 @@ final class LoopKitViewModel: ObservableObject {
   /// the echoed status update doesn't re-fire `applyMonitorDevice`.
   private var pendingMonitorEcho: String?
   private var pendingInputEcho: String?
+  private var clipHoldUntil: [String: Date] = [:]
 
   // MARK: Lifecycle
 
@@ -317,11 +319,21 @@ final class LoopKitViewModel: ObservableObject {
   private func refreshMeters() async {
     let next = await daemon.subscribeMeters()
     meters = Dictionary(uniqueKeysWithValues: next.map { ($0.sourceID, $0) })
+    let now = Date()
+    for meter in next where meter.clippedL || meter.clippedR {
+      clipHoldUntil[meter.sourceID] = now.addingTimeInterval(1)
+    }
+    clipHoldUntil = clipHoldUntil.filter { $0.value > now }
+    clippingSourceIDs = Set(clipHoldUntil.keys)
   }
 
   // MARK: Derived view helpers
 
   func meter(for sourceID: String) -> LKXPCMeter? { meters[sourceID] }
+
+  func isClipping(_ sourceID: String) -> Bool {
+    clippingSourceIDs.contains(sourceID)
+  }
 
   var monitorDevices: [LKXPCDevice] {
     outputDevices.filter {

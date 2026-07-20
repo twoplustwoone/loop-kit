@@ -4,11 +4,18 @@ public struct LoopKitStereoMeter: View {
   private let left: Double
   private let right: Double
   private let isVertical: Bool
+  private let isClipping: Bool
 
-  public init(left: Double, right: Double, isVertical: Bool = false) {
+  public init(
+    left: Double,
+    right: Double,
+    isVertical: Bool = false,
+    isClipping: Bool = false
+  ) {
     self.left = left
     self.right = right
     self.isVertical = isVertical
+    self.isClipping = isClipping
   }
 
   public var body: some View {
@@ -24,6 +31,10 @@ public struct LoopKitStereoMeter: View {
           horizontalLane(level: right, size: proxy.size)
         }
       }
+    }
+    .overlay {
+      RoundedRectangle(cornerRadius: 2)
+        .stroke(isClipping ? LoopKitTheme.error : Color.clear, lineWidth: 2)
     }
     .accessibilityElement(children: .ignore)
     .accessibilityLabel("Stereo level")
@@ -201,6 +212,7 @@ public struct LoopKitSourceStrip: View {
   @Binding private var isEnabled: Bool
   private let peakLeft: Double
   private let peakRight: Double
+  private let isClipping: Bool
   private let onEditingChanged: (Bool) -> Void
 
   public init(
@@ -212,6 +224,7 @@ public struct LoopKitSourceStrip: View {
     isEnabled: Binding<Bool>,
     peakLeft: Double,
     peakRight: Double,
+    isClipping: Bool = false,
     onEditingChanged: @escaping (Bool) -> Void = { _ in }
   ) {
     self.name = name
@@ -222,6 +235,7 @@ public struct LoopKitSourceStrip: View {
     _isEnabled = isEnabled
     self.peakLeft = peakLeft
     self.peakRight = peakRight
+    self.isClipping = isClipping
     self.onEditingChanged = onEditingChanged
   }
 
@@ -252,7 +266,12 @@ public struct LoopKitSourceStrip: View {
         }
 
         ZStack {
-          LoopKitStereoMeter(left: peakLeft, right: peakRight, isVertical: true)
+          LoopKitStereoMeter(
+            left: peakLeft,
+            right: peakRight,
+            isVertical: true,
+            isClipping: isClipping
+          )
             .frame(width: 30)
             .opacity(isEnabled ? 0.82 : 0.20)
           LoopKitVerticalFader(value: $gain, onEditingChanged: onEditingChanged)
@@ -261,7 +280,7 @@ public struct LoopKitSourceStrip: View {
         .frame(height: 130)
 
         VStack(spacing: 1) {
-          Text(String(format: "%.2fx", gain))
+          Text(loopKitDecibelString(gain))
             .font(LoopKitTheme.mono(11, weight: .medium))
             .foregroundStyle(LoopKitTheme.teal)
           Text("GAIN")
@@ -295,4 +314,10 @@ public struct LoopKitSourceStrip: View {
     }
     .buttonStyle(.plain)
   }
+}
+
+public func loopKitDecibelString(_ linearGain: Double) -> String {
+  guard linearGain.isFinite, linearGain > 0 else { return "−∞ dB" }
+  let decibels = 20 * log10(linearGain)
+  return String(format: "%+.1f dB", decibels)
 }
