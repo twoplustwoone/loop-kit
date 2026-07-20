@@ -28,6 +28,12 @@ jobs:
         run: cmake --build build --parallel
       - name: Test
         run: ctest --test-dir build --output-on-failure
+      - name: Configure Thread Sanitizer build
+        run: cmake -S engine -B build-tsan -Wno-dev -DLOOPKIT_ENABLE_TSAN=ON
+      - name: Run resampler stress test under Thread Sanitizer
+        run: |
+          cmake --build build-tsan --parallel --target loopkit_resampler_tests
+          ./build-tsan/loopkit_resampler_tests
       - name: Guard against transport symbols
         # We dropped the shared-memory transport in the BlackHole pivot.
         # Fail loudly if any of those symbols come back via a stale source.
