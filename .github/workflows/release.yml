@@ -3,7 +3,7 @@ name: release
 on:
   push:
     tags:
-      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v*.*.*"
 
 permissions:
   contents: write
@@ -41,6 +41,7 @@ jobs:
           [[ "${GITHUB_REF_TYPE}" == "tag" ]]
           [[ "$(git rev-list -n 1 "${GITHUB_REF_NAME}")" == "${GITHUB_SHA}" ]]
           version="${GITHUB_REF_NAME#v}"
+          [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           project_version="$(sed -n 's/^[[:space:]]*MARKETING_VERSION:[[:space:]]*//p' macos/ControlApp/project.yml | sort -u)"
           [[ "${version}" == "${project_version}" ]]
 
