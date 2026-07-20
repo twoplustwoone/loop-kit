@@ -36,14 +36,44 @@ public struct StereoAudio: Equatable {
 }
 
 public struct OfflineMixOptions: Equatable {
-  public var sourceGain: Double
+  public var application: OfflineSourceOptions
+  public var microphone: OfflineSourceOptions
   public var masterGain: Double
-  public var muted: Bool
 
-  public init(sourceGain: Double = 1.0, masterGain: Double = 1.0, muted: Bool = false) {
-    self.sourceGain = sourceGain
+  public init(
+    application: OfflineSourceOptions,
+    microphone: OfflineSourceOptions = OfflineSourceOptions(),
+    masterGain: Double = 1.0
+  ) {
+    self.application = application
+    self.microphone = microphone
     self.masterGain = masterGain
+  }
+
+  /// Compatibility initializer for the original single-input harness.
+  public init(sourceGain: Double = 1.0, masterGain: Double = 1.0, muted: Bool = false) {
+    application = OfflineSourceOptions(gain: sourceGain, muted: muted)
+    microphone = OfflineSourceOptions()
+    self.masterGain = masterGain
+  }
+}
+
+public struct OfflineSourceOptions: Equatable {
+  public var gain: Double
+  public var muted: Bool
+  public var solo: Bool
+  public var enabled: Bool
+
+  public init(
+    gain: Double = 1.0,
+    muted: Bool = false,
+    solo: Bool = false,
+    enabled: Bool = true
+  ) {
+    self.gain = gain
     self.muted = muted
+    self.solo = solo
+    self.enabled = enabled
   }
 }
 
@@ -54,8 +84,27 @@ public enum OfflineMixer {
     _ input: StereoAudio,
     options: OfflineMixOptions = OfflineMixOptions()
   ) throws -> StereoAudio {
+    try process(application: input, microphone: nil, options: options)
+  }
+
+  public static func process(
+    application: StereoAudio,
+    microphone: StereoAudio?,
+    options: OfflineMixOptions = OfflineMixOptions()
+  ) throws -> StereoAudio {
+    if let microphone, microphone.sampleRate != application.sampleRate {
+      throw OfflineAudioError.invalidAudio(
+        "Application and microphone inputs must use the same sample rate"
+      )
+    }
+    let frameCount = max(application.left.count, microphone?.left.count ?? 0)
+    let appLeft = padded(application.left, to: frameCount)
+    let appRight = padded(application.right, to: frameCount)
+    let micLeft = padded(microphone?.left ?? [], to: frameCount)
+    let micRight = padded(microphone?.right ?? [], to: frameCount)
+
     var config = lk_engine_config(
-      sample_rate: UInt32(input.sampleRate),
+      sample_rate: UInt32(application.sampleRate),
       max_block_frames: UInt32(blockFrames)
     )
     guard let engine = lk_engine_create(&config) else {
@@ -63,55 +112,53 @@ public enum OfflineMixer {
     }
     defer { lk_engine_destroy(engine) }
 
-    let app = lk_source_params(
-      gain: Float(clampedGain(options.sourceGain)),
-      mute: options.muted ? 1 : 0,
-      solo: 0,
-      enabled: 1
-    )
-    let disabledMic = lk_source_params(gain: 0, mute: 1, solo: 0, enabled: 0)
-    lk_engine_set_source_params(engine, UInt32(LK_SOURCE_APP), app)
-    lk_engine_set_source_params(engine, UInt32(LK_SOURCE_MIC), disabledMic)
+    lk_engine_set_source_params(engine, UInt32(LK_SOURCE_APP), params(options.application))
+    var microphoneOptions = options.microphone
+    if microphone == nil { microphoneOptions.enabled = false }
+    lk_engine_set_source_params(engine, UInt32(LK_SOURCE_MIC), params(microphoneOptions))
     lk_engine_set_master_gain(engine, Float(clampedGain(options.masterGain)))
 
-    var outputLeft = [Float](repeating: 0, count: input.left.count)
-    var outputRight = [Float](repeating: 0, count: input.right.count)
-    let silence = [Float](repeating: 0, count: blockFrames)
+    var outputLeft = [Float](repeating: 0, count: frameCount)
+    var outputRight = [Float](repeating: 0, count: frameCount)
 
-    input.left.withUnsafeBufferPointer { inputLeft in
-      input.right.withUnsafeBufferPointer { inputRight in
-        silence.withUnsafeBufferPointer { silent in
-          outputLeft.withUnsafeMutableBufferPointer { outputLeftBuffer in
-            outputRight.withUnsafeMutableBufferPointer { outputRightBuffer in
-              var offset = 0
-              while offset < input.left.count {
-                let frames = min(Self.blockFrames, input.left.count - offset)
-                var appInput = lk_input_audio_block(
-                  left: inputLeft.baseAddress?.advanced(by: offset),
-                  right: inputRight.baseAddress?.advanced(by: offset),
-                  frames: UInt32(frames)
-                )
-                var micInput = lk_input_audio_block(
-                  left: silent.baseAddress,
-                  right: silent.baseAddress,
-                  frames: UInt32(frames)
-                )
-                var broadcastOutput = lk_output_audio_block(
-                  left: outputLeftBuffer.baseAddress?.advanced(by: offset),
-                  right: outputRightBuffer.baseAddress?.advanced(by: offset),
-                  frames: UInt32(frames)
-                )
-                var monitorOutput = lk_output_audio_block(left: nil, right: nil, frames: 0)
-                var meters = lk_meter_block(peak_l: 0, peak_r: 0, rms_l: 0, rms_r: 0, clipped_l: 0, clipped_r: 0)
-                lk_engine_process(
-                  engine,
-                  &appInput,
-                  &micInput,
-                  &broadcastOutput,
-                  &monitorOutput,
-                  &meters
-                )
-                offset += frames
+    appLeft.withUnsafeBufferPointer { inputLeft in
+      appRight.withUnsafeBufferPointer { inputRight in
+        micLeft.withUnsafeBufferPointer { microphoneLeft in
+          micRight.withUnsafeBufferPointer { microphoneRight in
+            outputLeft.withUnsafeMutableBufferPointer { outputLeftBuffer in
+              outputRight.withUnsafeMutableBufferPointer { outputRightBuffer in
+                var offset = 0
+                while offset < frameCount {
+                  let frames = min(Self.blockFrames, frameCount - offset)
+                  var appInput = lk_input_audio_block(
+                    left: inputLeft.baseAddress?.advanced(by: offset),
+                    right: inputRight.baseAddress?.advanced(by: offset),
+                    frames: UInt32(frames)
+                  )
+                  var micInput = lk_input_audio_block(
+                    left: microphoneLeft.baseAddress?.advanced(by: offset),
+                    right: microphoneRight.baseAddress?.advanced(by: offset),
+                    frames: UInt32(frames)
+                  )
+                  var broadcastOutput = lk_output_audio_block(
+                    left: outputLeftBuffer.baseAddress?.advanced(by: offset),
+                    right: outputRightBuffer.baseAddress?.advanced(by: offset),
+                    frames: UInt32(frames)
+                  )
+                  var monitorOutput = lk_output_audio_block(left: nil, right: nil, frames: 0)
+                  var meters = lk_meter_block(
+                    peak_l: 0, peak_r: 0, rms_l: 0, rms_r: 0, clipped_l: 0, clipped_r: 0
+                  )
+                  lk_engine_process(
+                    engine,
+                    &appInput,
+                    &micInput,
+                    &broadcastOutput,
+                    &monitorOutput,
+                    &meters
+                  )
+                  offset += frames
+                }
               }
             }
           }
@@ -119,7 +166,21 @@ public enum OfflineMixer {
       }
     }
 
-    return try StereoAudio(sampleRate: input.sampleRate, left: outputLeft, right: outputRight)
+    return try StereoAudio(sampleRate: application.sampleRate, left: outputLeft, right: outputRight)
+  }
+
+  private static func params(_ options: OfflineSourceOptions) -> lk_source_params {
+    lk_source_params(
+      gain: Float(clampedGain(options.gain)),
+      mute: options.muted ? 1 : 0,
+      solo: options.solo ? 1 : 0,
+      enabled: options.enabled ? 1 : 0
+    )
+  }
+
+  private static func padded(_ values: [Float], to count: Int) -> [Float] {
+    guard values.count < count else { return values }
+    return values + repeatElement(0, count: count - values.count)
   }
 
   private static func clampedGain(_ value: Double) -> Double {

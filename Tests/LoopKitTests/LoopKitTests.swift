@@ -517,6 +517,59 @@ final class LoopKitTests: XCTestCase {
         XCTAssertTrue(muted.right.allSatisfy { $0 == 0 })
     }
 
+    func testOfflineMixerCombinesAndPadsTwoInputs() throws {
+        let application = try StereoAudio(
+            sampleRate: 48_000,
+            left: [0.2, 0.2],
+            right: [0.1, 0.1]
+        )
+        let microphone = try StereoAudio(
+            sampleRate: 48_000,
+            left: [0.3],
+            right: [0.4]
+        )
+        let mixed = try OfflineMixer.process(
+            application: application,
+            microphone: microphone
+        )
+        XCTAssertEqual(mixed.left.count, 2)
+        XCTAssertEqual(mixed.left[0], 0.5, accuracy: 1e-4)
+        XCTAssertEqual(mixed.left[1], 0.2, accuracy: 1e-4)
+        XCTAssertEqual(mixed.right[0], 0.5, accuracy: 1e-4)
+        XCTAssertEqual(mixed.right[1], 0.1, accuracy: 1e-4)
+    }
+
+    func testOfflineMixerMuteSoloAndEnabledCombinations() throws {
+        let application = try StereoAudio(sampleRate: 48_000, left: [0.2], right: [0.2])
+        let microphone = try StereoAudio(sampleRate: 48_000, left: [0.3], right: [0.3])
+
+        func first(_ app: OfflineSourceOptions, _ mic: OfflineSourceOptions) throws -> Float {
+            let output = try OfflineMixer.process(
+                application: application,
+                microphone: microphone,
+                options: OfflineMixOptions(application: app, microphone: mic)
+            )
+            return output.left[0]
+        }
+
+        XCTAssertEqual(try first(.init(), .init()), 0.5, accuracy: 1e-4)
+        XCTAssertEqual(try first(.init(muted: true), .init()), 0.3, accuracy: 1e-4)
+        XCTAssertEqual(try first(.init(), .init(muted: true)), 0.2, accuracy: 1e-4)
+        XCTAssertEqual(try first(.init(solo: true), .init()), 0.2, accuracy: 1e-4)
+        XCTAssertEqual(try first(.init(), .init(solo: true)), 0.3, accuracy: 1e-4)
+        XCTAssertEqual(try first(.init(solo: true), .init(solo: true)), 0.5, accuracy: 1e-4)
+        XCTAssertEqual(try first(.init(enabled: false), .init()), 0.3, accuracy: 1e-4)
+        XCTAssertEqual(try first(.init(), .init(enabled: false)), 0.2, accuracy: 1e-4)
+    }
+
+    func testOfflineMixerRejectsMismatchedSampleRates() throws {
+        let application = try StereoAudio(sampleRate: 48_000, left: [0], right: [0])
+        let microphone = try StereoAudio(sampleRate: 44_100, left: [0], right: [0])
+        XCTAssertThrowsError(
+            try OfflineMixer.process(application: application, microphone: microphone)
+        )
+    }
+
     func testIPCSecureCodingRoundTripsSourceAndStatus() throws {
         let source = LKXPCSourceState(
             id: "app:com.example.player",

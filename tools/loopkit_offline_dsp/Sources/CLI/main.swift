@@ -7,8 +7,13 @@ struct LoopKitOfflineDSPCommand {
   static func main() {
     do {
       let arguments = try parseArguments(Array(CommandLine.arguments.dropFirst()))
-      let input = try WaveFile.read(from: arguments.input)
-      let output = try OfflineMixer.process(input, options: arguments.options)
+      let application = try WaveFile.read(from: arguments.applicationInput)
+      let microphone = try arguments.microphoneInput.map(WaveFile.read)
+      let output = try OfflineMixer.process(
+        application: application,
+        microphone: microphone,
+        options: arguments.options
+      )
       try WaveFile.write(output, to: arguments.output)
       print("Processed \(output.left.count) frames at \(output.sampleRate) Hz → \(arguments.output.path)")
     } catch {
@@ -20,7 +25,8 @@ struct LoopKitOfflineDSPCommand {
   }
 
   private struct Arguments {
-    let input: URL
+    let applicationInput: URL
+    let microphoneInput: URL?
     let output: URL
     let options: OfflineMixOptions
   }
@@ -31,19 +37,45 @@ struct LoopKitOfflineDSPCommand {
     }
 
     var options = OfflineMixOptions()
+    var microphoneInput: URL?
     var index = 2
     while index < values.count {
       switch values[index] {
       case "--mute":
-        options.muted = true
+        options.application.muted = true
         index += 1
-      case "--gain", "--master-gain":
+      case "--app-mute":
+        options.application.muted = true
+        index += 1
+      case "--mic-mute":
+        options.microphone.muted = true
+        index += 1
+      case "--app-solo":
+        options.application.solo = true
+        index += 1
+      case "--mic-solo":
+        options.microphone.solo = true
+        index += 1
+      case "--app-disable":
+        options.application.enabled = false
+        index += 1
+      case "--mic-disable":
+        options.microphone.enabled = false
+        index += 1
+      case "--mic-input":
+        guard index + 1 < values.count else {
+          throw OfflineAudioError.invalidAudio("--mic-input requires a WAVE path")
+        }
+        microphoneInput = URL(fileURLWithPath: values[index + 1])
+        index += 2
+      case "--gain", "--app-gain", "--mic-gain", "--master-gain":
         guard index + 1 < values.count, let gain = Double(values[index + 1]) else {
           throw OfflineAudioError.invalidAudio("\(values[index]) requires a numeric value")
         }
-        if values[index] == "--gain" {
-          options.sourceGain = gain
-        } else {
+        switch values[index] {
+        case "--gain", "--app-gain": options.application.gain = gain
+        case "--mic-gain": options.microphone.gain = gain
+        default:
           options.masterGain = gain
         }
         index += 2
@@ -53,13 +85,23 @@ struct LoopKitOfflineDSPCommand {
     }
 
     return Arguments(
-      input: URL(fileURLWithPath: values[0]),
+      applicationInput: URL(fileURLWithPath: values[0]),
+      microphoneInput: microphoneInput,
       output: URL(fileURLWithPath: values[1]),
       options: options
     )
   }
 
   private static func printUsage() {
-    print("Usage: loopkit_offline_dsp INPUT.wav OUTPUT.wav [--gain N] [--master-gain N] [--mute]")
+    print("""
+      Usage: loopkit_offline_dsp APP.wav OUTPUT.wav [options]
+        --mic-input MIC.wav       Add a microphone input (sample rates must match)
+        --app-gain N              Application gain (--gain is an alias)
+        --mic-gain N              Microphone gain
+        --master-gain N           Master gain
+        --app-mute | --mic-mute   Mute a source (--mute aliases --app-mute)
+        --app-solo | --mic-solo   Solo a source
+        --app-disable | --mic-disable
+      """)
   }
 }
