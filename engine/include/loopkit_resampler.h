@@ -12,11 +12,12 @@ class AsyncResampler {
 
   void reset();
   void setRates(double input_rate, double output_rate);
-  void push(const float* left, const float* right, uint32_t frames);
+  [[nodiscard]] bool push(const float* left, const float* right, uint32_t frames);
   uint32_t pop(float* left, float* right, uint32_t frames);
   uint64_t underruns() const;
   uint64_t overruns() const;
   double fillRatio() const;
+  uint32_t bufferedFrames() const;
 
  private:
   static uint32_t nextPowerOfTwo(uint32_t value);

@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -83,7 +84,7 @@ void testRateConversion() {
       in_l[i] = sample;
       in_r[i] = sample;
     }
-    resampler.push(in_l.data(), in_r.data(), input_frames);
+    (void)resampler.push(in_l.data(), in_r.data(), input_frames);
     input_time += static_cast<double>(input_frames) / input_rate;
 
     std::vector<float> tmp_l(chunk);
@@ -129,7 +130,7 @@ void testClockDrift() {
       in_l[j] = sample;
       in_r[j] = sample;
     }
-    resampler.push(in_l.data(), in_r.data(), input_frames);
+    (void)resampler.push(in_l.data(), in_r.data(), input_frames);
 
     std::vector<float> out_l(chunk);
     std::vector<float> out_r(chunk);
@@ -151,7 +152,7 @@ void testUnderrunHandling() {
     in_l[i] = sample;
     in_r[i] = sample;
   }
-  resampler.push(in_l.data(), in_r.data(), static_cast<uint32_t>(in_l.size()));
+  (void)resampler.push(in_l.data(), in_r.data(), static_cast<uint32_t>(in_l.size()));
 
   std::vector<float> out_l(1024);
   std::vector<float> out_r(1024);
@@ -182,7 +183,7 @@ void testOverrunHandling() {
       in_l[j] = sample;
       in_r[j] = sample;
     }
-    resampler.push(in_l.data(), in_r.data(), input_frames);
+    (void)resampler.push(in_l.data(), in_r.data(), input_frames);
 
     std::vector<float> out_l(chunk);
     std::vector<float> out_r(chunk);
@@ -205,7 +206,7 @@ void testStereoCoherence() {
     in_l[i] = sample;
     in_r[i] = sample;
   }
-  resampler.push(in_l.data(), in_r.data(), static_cast<uint32_t>(in_l.size()));
+  (void)resampler.push(in_l.data(), in_r.data(), static_cast<uint32_t>(in_l.size()));
 
   std::vector<float> out_l(512);
   std::vector<float> out_r(512);
@@ -218,6 +219,63 @@ void testStereoCoherence() {
   expect(max_diff < 1e-4f, "stereo channels remain coherent");
 }
 
+void testRejectedOverrunPreservesUnreadAudio() {
+  loopkit::AsyncResampler resampler(48000.0, 48000.0, 64);
+  std::vector<float> original(48, 0.25f);
+  std::vector<float> replacement(32, 0.9f);
+
+  expect(resampler.push(original.data(), original.data(), 48), "initial block accepted");
+  expect(!resampler.push(replacement.data(), replacement.data(), 32), "overflowing block rejected");
+  expect(resampler.overruns() == 1, "rejected block increments overrun count");
+  expect(resampler.bufferedFrames() == 48, "rejected block leaves queue depth unchanged");
+
+  std::vector<float> out_l(32);
+  std::vector<float> out_r(32);
+  resampler.pop(out_l.data(), out_r.data(), 32);
+  for (float sample : out_l) {
+    expect(std::fabs(sample - 0.25f) < 1e-4f, "rejected block cannot overwrite unread audio");
+  }
+}
+
+void testConcurrentProducerConsumerStress() {
+  loopkit::AsyncResampler resampler(48000.0, 48000.0, 2048);
+  constexpr uint32_t chunk = 32;
+  constexpr int iterations = 20'000;
+  std::vector<float> input_l(chunk, 0.25f);
+  std::vector<float> input_r(chunk, -0.25f);
+  std::atomic<bool> producer_done{false};
+
+  std::thread producer([&] {
+    for (int i = 0; i < iterations; ++i) {
+      while (!resampler.push(input_l.data(), input_r.data(), chunk)) {
+        std::this_thread::yield();
+      }
+    }
+    producer_done.store(true, std::memory_order_release);
+  });
+
+  std::thread consumer([&] {
+    std::vector<float> out_l(chunk);
+    std::vector<float> out_r(chunk);
+    while (!producer_done.load(std::memory_order_acquire) || resampler.bufferedFrames() >= chunk) {
+      if (resampler.bufferedFrames() < chunk) {
+        std::this_thread::yield();
+        continue;
+      }
+      resampler.pop(out_l.data(), out_r.data(), chunk);
+      for (uint32_t i = 0; i < chunk; ++i) {
+        expect(std::isfinite(out_l[i]) && std::isfinite(out_r[i]), "concurrent output stays finite");
+        expect(std::fabs(out_l[i]) <= 0.251f, "left channel is not overwritten");
+        expect(std::fabs(out_r[i]) <= 0.251f, "right channel is not overwritten");
+      }
+    }
+  });
+
+  producer.join();
+  consumer.join();
+  expect(resampler.fillRatio() >= 0.0 && resampler.fillRatio() <= 1.0, "concurrent fill remains valid");
+}
+
 }  // namespace
 
 int main() {
@@ -226,6 +284,8 @@ int main() {
   testUnderrunHandling();
   testOverrunHandling();
   testStereoCoherence();
+  testRejectedOverrunPreservesUnreadAudio();
+  testConcurrentProducerConsumerStress();
   std::cout << "loopkit_resampler_tests: PASS\n";
   return 0;
 }

@@ -351,7 +351,7 @@ NSString* deviceUIDForID(AudioDeviceID id) {
     std::copy_n(rSrc, frames, right);
   }
 
-  resampler_->push(left, right, static_cast<uint32_t>(frames));
+  (void)resampler_->push(left, right, static_cast<uint32_t>(frames));
 }
 
 - (uint32_t)copyAudioLeft:(float*)left right:(float*)right maxFrames:(uint32_t)maxFrames {

@@ -53,34 +53,19 @@ void AsyncResampler::setRates(double input_rate, double output_rate) {
   }
 }
 
-void AsyncResampler::push(const float* left, const float* right, uint32_t frames) {
+bool AsyncResampler::push(const float* left, const float* right, uint32_t frames) {
   if (left == nullptr || right == nullptr || frames == 0 || capacity_ == 0) {
-    return;
+    return false;
   }
 
-  uint64_t write = write_index_.load(std::memory_order_relaxed);
-  double read = read_index_.load(std::memory_order_acquire);
-  if (read > static_cast<double>(write)) {
-    read = static_cast<double>(write);
-  }
-
-  if (frames >= capacity_) {
-    const uint32_t keep = capacity_;
-    left += (frames - keep);
-    right += (frames - keep);
-    frames = keep;
-    read = static_cast<double>(write);
+  const uint64_t write = write_index_.load(std::memory_order_relaxed);
+  const double read = read_index_.load(std::memory_order_acquire);
+  const double used = std::max(0.0, static_cast<double>(write) - read);
+  const double available = static_cast<double>(capacity_) - used;
+  if (frames > capacity_ || static_cast<double>(frames) > available) {
     overruns_.fetch_add(1, std::memory_order_relaxed);
-  } else {
-    const double used = static_cast<double>(write) - read;
-    if (used + static_cast<double>(frames) > static_cast<double>(capacity_)) {
-      const double drop = used + static_cast<double>(frames) - static_cast<double>(capacity_);
-      read += drop;
-      overruns_.fetch_add(1, std::memory_order_relaxed);
-    }
+    return false;
   }
-
-  read_index_.store(read, std::memory_order_release);
 
   for (uint32_t i = 0; i < frames; ++i) {
     const uint32_t index = static_cast<uint32_t>((write + i) & mask_);
@@ -88,6 +73,7 @@ void AsyncResampler::push(const float* left, const float* right, uint32_t frames
     right_[index] = right[i];
   }
   write_index_.store(write + frames, std::memory_order_release);
+  return true;
 }
 
 uint32_t AsyncResampler::pop(float* left, float* right, uint32_t frames) {
@@ -157,6 +143,13 @@ double AsyncResampler::fillRatio() const {
   }
   const double available = static_cast<double>(write) - read;
   return clamp(available / static_cast<double>(capacity_), 0.0, 1.0);
+}
+
+uint32_t AsyncResampler::bufferedFrames() const {
+  const uint64_t write = write_index_.load(std::memory_order_acquire);
+  const double read = read_index_.load(std::memory_order_relaxed);
+  const double available = clamp(static_cast<double>(write) - read, 0.0, static_cast<double>(capacity_));
+  return static_cast<uint32_t>(available);
 }
 
 double AsyncResampler::baseRatio() const {

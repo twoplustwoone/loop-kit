@@ -96,7 +96,7 @@ OSStatus tapDeviceIOProc(AudioObjectID inDevice,
         const float* right = static_cast<const float*>(rightBuffer.mData);
         for (uint32_t offset = 0; offset < totalFrames; offset += kTapPacketFrames) {
           const uint32_t chunk = std::min(kTapPacketFrames, totalFrames - offset);
-          context->resampler->push(left + offset, right + offset, chunk);
+          (void)context->resampler->push(left + offset, right + offset, chunk);
         }
       }
     } else if (inInputData->mNumberBuffers == 1) {
@@ -115,7 +115,7 @@ OSStatus tapDeviceIOProc(AudioObjectID inDevice,
             left[frame] = data[index];
             right[frame] = channels >= 2 ? data[index + 1] : data[index];
           }
-          context->resampler->push(left.data(), right.data(), chunk);
+          (void)context->resampler->push(left.data(), right.data(), chunk);
         }
       }
     }
