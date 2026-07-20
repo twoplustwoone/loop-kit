@@ -20,6 +20,20 @@ public let LKHealthStateHealthy = "healthy"
 public let LKHealthStateRecovering = "recovering"
 public let LKHealthStateFault = "fault"
 
+public enum LoopKitApplicationPolicy {
+  public static let communicationsBundleIDs: Set<String> = [
+    "com.hnc.Discord",
+    "com.microsoft.teams2",
+    "com.tinyspeck.slackmacgap",
+    "net.whatsapp.WhatsApp",
+    "us.zoom.xos",
+  ]
+
+  public static func isCommunicationsApplication(_ bundleID: String) -> Bool {
+    communicationsBundleIDs.contains(bundleID)
+  }
+}
+
 public enum LoopKitCodeSigningRequirement {
   public static let appIdentifier = "com.twoplustwoone.LoopKit"
   public static let agentIdentifier = "com.twoplustwoone.LoopKit.agent"

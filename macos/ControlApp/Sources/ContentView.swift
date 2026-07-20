@@ -383,6 +383,7 @@ private struct RoutingGraph: View {
   @State private var draggingSourceID: String?
   @State private var dragLocation: CGPoint?
   @State private var hoveredDestinationID: String?
+  @State private var pendingEchoRisk: EchoRiskRoute?
 
   private var visibleSources: [LKXPCSourceState] { Array(model.sources.prefix(5)) }
 
@@ -509,7 +510,18 @@ private struct RoutingGraph: View {
                 }
                 .onEnded { value in
                   if let destinationID = layout.destinationID(near: value.location) {
-                    model.toggleRoute(sourceID: source.id, destinationID: destinationID)
+                    if let bundleID = model.echoRiskBundleID(
+                      sourceID: source.id,
+                      destinationID: destinationID
+                    ) {
+                      pendingEchoRisk = EchoRiskRoute(
+                        sourceID: source.id,
+                        displayName: source.displayName,
+                        bundleID: bundleID
+                      )
+                    } else {
+                      model.toggleRoute(sourceID: source.id, destinationID: destinationID)
+                    }
                   }
                   draggingSourceID = nil
                   dragLocation = nil
@@ -544,6 +556,28 @@ private struct RoutingGraph: View {
       }
       .clipped()
       .coordinateSpace(name: "routingGraph")
+      .confirmationDialog(
+        "Enable a possible echo route?",
+        isPresented: Binding(
+          get: { pendingEchoRisk != nil },
+          set: { if !$0 { pendingEchoRisk = nil } }
+        ),
+        presenting: pendingEchoRisk
+      ) { route in
+        Button("Send \(route.displayName) to Broadcast", role: .destructive) {
+          model.approveEchoRiskAndEnableRoute(
+            sourceID: route.sourceID,
+            bundleID: route.bundleID
+          )
+          pendingEchoRisk = nil
+        }
+        Button("Cancel", role: .cancel) { pendingEchoRisk = nil }
+      } message: { route in
+        Text(
+          "Remote callers from \(route.displayName) may be sent back to themselves. "
+            + "LoopKit will remember this approval for \(route.bundleID)."
+        )
+      }
     }
   }
 
@@ -578,6 +612,12 @@ private struct RoutingGraph: View {
       )
     )
   }
+}
+
+private struct EchoRiskRoute {
+  let sourceID: String
+  let displayName: String
+  let bundleID: String
 }
 
 private struct RoutingGraphLayout {

@@ -329,6 +329,8 @@ final class LoopKitTests: XCTestCase {
     }
 
     func testSafeRoutingDefaultsAndEchoApproval() throws {
+        XCTAssertTrue(LoopKitApplicationPolicy.isCommunicationsApplication("com.hnc.Discord"))
+        XCTAssertFalse(LoopKitApplicationPolicy.isCommunicationsApplication("org.mozilla.firefox"))
         XCTAssertEqual(
             RoutingSafetyPolicy.defaultDestinations(for: .microphone),
             [.broadcast]

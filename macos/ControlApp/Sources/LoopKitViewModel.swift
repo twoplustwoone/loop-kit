@@ -369,6 +369,26 @@ final class LoopKitViewModel: ObservableObject {
     }
   }
 
+  func echoRiskBundleID(sourceID: String, destinationID: String) -> String? {
+    guard destinationID == LKRouteDestinationBroadcast,
+          !hasRoute(sourceID: sourceID, destinationID: destinationID),
+          sourceID.hasPrefix("app:")
+    else { return nil }
+    let bundleID = String(sourceID.dropFirst(4))
+    return LoopKitApplicationPolicy.isCommunicationsApplication(bundleID) ? bundleID : nil
+  }
+
+  func approveEchoRiskAndEnableRoute(sourceID: String, bundleID: String) {
+    Task {
+      let result = await daemon.approveEchoRisk(bundleID: bundleID, approved: true)
+      guard result.success else {
+        lastActionMessage = result.message ?? "Failed to approve the communications-app route"
+        return
+      }
+      toggleRoute(sourceID: sourceID, destinationID: LKRouteDestinationBroadcast)
+    }
+  }
+
   func deviceName(uid: String, inputs: Bool = false) -> String {
     let pool = inputs ? inputDevices : outputDevices
     return pool.first(where: { $0.uid == uid })?.name ?? uid

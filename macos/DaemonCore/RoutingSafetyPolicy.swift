@@ -26,16 +26,8 @@ enum RoutingSafetyPolicy {
     "com.example.LoopKit.loopkitd",
   ]
 
-  static let communicationsBundleIDs: Set<String> = [
-    "com.hnc.Discord",
-    "com.microsoft.teams2",
-    "com.tinyspeck.slackmacgap",
-    "net.whatsapp.WhatsApp",
-    "us.zoom.xos",
-  ]
-
   static func isCommunicationApplication(_ bundleID: String) -> Bool {
-    communicationsBundleIDs.contains(bundleID)
+    LoopKitApplicationPolicy.isCommunicationsApplication(bundleID)
   }
 
   static func defaultDestinations(for source: SourceID) -> Set<RouteDestination> {
