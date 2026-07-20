@@ -56,6 +56,16 @@ grep -q '^Signature=adhoc$' <<<"$helper_details" || fail "helper is not ad-hoc s
 grep -q 'flags=.*runtime' <<<"$app_details" || fail "app hardened runtime missing"
 grep -q 'flags=.*runtime' <<<"$helper_details" || fail "helper hardened runtime missing"
 
+# A Community artifact must compile the identifier-only XPC branch. If these
+# release-only failure strings remain, the app and helper would reject each
+# other's ad-hoc signatures at runtime.
+if /usr/bin/strings "$APP_BINARY" | grep -q 'missing its release Team ID'; then
+  fail "app was not compiled with LOOPKIT_COMMUNITY"
+fi
+if /usr/bin/strings "$HELPER_PATH" | grep -q 'missing its release Team ID'; then
+  fail "helper was not compiled with LOOPKIT_COMMUNITY"
+fi
+
 if [[ -n "$DMG_PATH" ]]; then
   [[ -f "$DMG_PATH" ]] || fail "DMG not found: $DMG_PATH"
   /usr/bin/hdiutil verify "$DMG_PATH" || fail "DMG verification failed"
