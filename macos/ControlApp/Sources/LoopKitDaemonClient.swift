@@ -45,10 +45,12 @@ actor LoopKitDaemonClient {
     configureLoopKitXPCInterface(interface)
     conn.remoteObjectInterface = interface
     conn.invalidationHandler = { [weak self] in
-      Task { await self?.handleInvalidation(reason: "loopkitd connection invalidated") }
+      guard let client = self else { return }
+      Task { await client.handleInvalidation(reason: "loopkitd connection invalidated") }
     }
     conn.interruptionHandler = { [weak self] in
-      Task { await self?.handleInvalidation(reason: "loopkitd connection interrupted") }
+      guard let client = self else { return }
+      Task { await client.handleInvalidation(reason: "loopkitd connection interrupted") }
     }
     conn.resume()
     self.connection = conn
@@ -236,7 +238,9 @@ actor LoopKitDaemonClient {
     }
     return await withCheckedContinuation { (cont: CheckedContinuation<T, Never>) in
       let onError: (Error) -> Void = { [weak self] error in
-        Task { await self?.handleInvalidation(reason: error.localizedDescription) }
+        if let client = self {
+          Task { await client.handleInvalidation(reason: error.localizedDescription) }
+        }
         cont.resume(returning: fallback)
       }
       guard let proxy = proxyIfAvailable(onError: onError) else {
