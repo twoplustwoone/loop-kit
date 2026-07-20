@@ -2,9 +2,12 @@
 
 ## Setup
 
-1. Run `./installer/install_local.sh`.
-2. Launch `/Applications/LoopKit.app`.
-3. In Discord, set input device to `BlackHole 2ch`.
+1. Install BlackHole 2ch from its official project if it is not already present.
+2. Run `./installer/install_local.sh` for a developer build, or mount the signed release DMG and drag LoopKit to Applications.
+3. Launch `/Applications/LoopKit.app` and complete first-run setup without Terminal.
+4. Approve the LoopKit helper in Login Items if macOS requests it.
+5. Grant microphone access only from the explicit setup action.
+6. In Discord, set input device to `BlackHole 2ch`.
 
 ## Routing checks
 
@@ -15,6 +18,8 @@
 5. Drag the app port back to **Monitor** and confirm the route and local playback return.
 6. Disconnect the app from **Broadcast** and confirm Discord no longer receives it while local monitoring continues.
 7. Add microphone Routes and confirm simultaneous speech + app audio in Discord.
+8. Confirm LoopKit refuses BlackHole as Monitor output and refuses to capture itself.
+9. Confirm a communications-app Broadcast route asks for echo-risk approval before it is added.
 
 ## Mixer checks
 
@@ -44,6 +49,14 @@
 
 ## Soak test
 
-1. Run Discord + background music + microphone for 2 hours.
-2. Watch status underrun/overrun counters.
-3. Validate no crash and no sustained dropout.
+1. Run Firefox + microphone + Discord for at least 30 minutes.
+2. Allow the startup grace period, then watch recent rates, queue fill, and scheduler discontinuities.
+3. Validate clean audio, no crash, and no post-startup underrun growth.
+
+## Release package checks
+
+1. Confirm both app and helper contain `arm64` and `x86_64` slices.
+2. Confirm the helper has microphone and application-audio privacy descriptions.
+3. Confirm Finder, Dock, Launchpad, and app switcher show the LoopKit icon without transparency fringes.
+4. Confirm the custom glyph remains legible in both light and dark menu bars.
+5. Run `codesign --verify --deep --strict`, `spctl --assess`, and `stapler validate` on the release artifact.
