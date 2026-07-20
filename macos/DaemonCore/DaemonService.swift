@@ -8,7 +8,7 @@ private let kProcessingWakeFrames: UInt64 = 256
 private let kOutputLeadFrames: UInt64 = 1_536
 private let kMaxCatchUpBlocks = 4
 
-public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
+final class LoopKitDaemonRuntime {
   private static let micSourceID = "mic"
   private static let appSourcePrefix = "app:"
 
@@ -86,6 +86,9 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
   )
   private var schedulerDiscontinuities: UInt64 = 0
   private var lastError: String?
+  private var lifecycle = LKRuntimeLifecycleStarting
+  private var microphonePermission = LKPermissionStateNotRequested
+  private var started = false
   private var echoRiskAcknowledgements: Set<String> = []
   private lazy var sessionWriter = DebouncedSessionWriter(queue: queue) { [weak self] state in
     guard let self else { return }
@@ -98,14 +101,25 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
 
   private let audioBlocks = AudioBlockStorage(frameCapacity: Int(kProcessingFrames))
 
-  public override init() {
-    super.init()
-    queue.sync {
-      restoreSessionLocked()
-      ensureCoreSourcesLocked()
-      bootstrapDSP()
-      startProcessingLoop()
-      startMaintenanceLoop()
+  init() {}
+
+  func start() {
+    queue.async {
+      guard !self.started else { return }
+      self.started = true
+      self.lifecycle = LKRuntimeLifecycleStarting
+      self.restoreSessionLocked()
+      self.ensureCoreSourcesLocked()
+      self.bootstrapDSP()
+      self.startProcessingLoop()
+      self.startMaintenanceLoop()
+      if self.engine == nil {
+        self.lifecycle = LKRuntimeLifecycleFailed
+      } else if self.broadcastOutputWarning != nil || self.captureWarning != nil {
+        self.lifecycle = LKRuntimeLifecycleDegraded
+      } else {
+        self.lifecycle = LKRuntimeLifecycleReady
+      }
     }
   }
 
@@ -123,7 +137,7 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
     }
   }
 
-  public func handshake(_ reply: @escaping (LKXPCHandshake) -> Void) {
+  func handshake(_ reply: @escaping (LKXPCHandshake) -> Void) {
     let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
       ?? "development"
     reply(
@@ -141,7 +155,7 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
     )
   }
 
-  public func setMasterGain(_ gain: Double, withReply reply: @escaping (LKXPCResult) -> Void) {
+  func setMasterGain(_ gain: Double, withReply reply: @escaping (LKXPCResult) -> Void) {
     queue.async {
       self.masterGain = ControlPolicy.gain(gain)
       self.syncEngineStateLocked()
@@ -150,7 +164,7 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
     }
   }
 
-  public func setSourceParams(_ source: LKXPCSourceState, withReply reply: @escaping (LKXPCResult) -> Void) {
+  func setSourceParams(_ source: LKXPCSourceState, withReply reply: @escaping (LKXPCResult) -> Void) {
     queue.async {
       self.sources[source.id] = self.sanitizedSource(source)
       self.syncEngineStateLocked()
@@ -159,7 +173,7 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
     }
   }
 
-  public func setMuteSolo(sourceID: String, mute: Bool, solo: Bool, enabled: Bool, withReply reply: @escaping (LKXPCResult) -> Void) {
+  func setMuteSolo(sourceID: String, mute: Bool, solo: Bool, enabled: Bool, withReply reply: @escaping (LKXPCResult) -> Void) {
     queue.async {
       guard let current = self.sources[sourceID] else {
         reply(LKXPCResult(success: false, message: "Unknown source \(sourceID)"))
@@ -175,7 +189,7 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
     }
   }
 
-  public func setMonitorDevice(uid: String, withReply reply: @escaping (LKXPCResult) -> Void) {
+  func setMonitorDevice(uid: String, withReply reply: @escaping (LKXPCResult) -> Void) {
     queue.async {
       do {
         try RoutingSafetyPolicy.validateMonitorDevice(
@@ -202,7 +216,7 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
     }
   }
 
-  public func listDevices(_ reply: @escaping ([LKXPCDevice]) -> Void) {
+  func listDevices(_ reply: @escaping ([LKXPCDevice]) -> Void) {
     queue.async {
       let devices = AudioDevices.outputDevices()
       if devices.isEmpty {
@@ -213,7 +227,7 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
     }
   }
 
-  public func listInputDevices(_ reply: @escaping ([LKXPCDevice]) -> Void) {
+  func listInputDevices(_ reply: @escaping ([LKXPCDevice]) -> Void) {
     queue.async {
       let devices = AudioDevices.inputDevices()
       if devices.isEmpty {
@@ -224,7 +238,7 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
     }
   }
 
-  public func setInputDevice(uid: String, withReply reply: @escaping (LKXPCResult) -> Void) {
+  func setInputDevice(uid: String, withReply reply: @escaping (LKXPCResult) -> Void) {
     queue.async {
       let known = AudioDevices.inputDevices().contains(where: { $0.uid == uid }) || uid == "system.default"
       guard known else {
@@ -232,13 +246,21 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
         return
       }
       self.requestedInputDeviceUID = uid
+      guard self.microphonePermission == LKPermissionStateGranted else {
+        self.scheduleSessionSaveLocked()
+        reply(LKXPCResult(
+          success: false,
+          message: "Choose Enable Microphone in LoopKit setup before selecting an input device."
+        ))
+        return
+      }
       self.applyInputDeviceLocked()
       self.scheduleSessionSaveLocked()
       reply(LKXPCResult(success: self.inputWarning == nil, message: self.inputWarning))
     }
   }
 
-  public func listCaptureApps(_ reply: @escaping ([LKXPCCaptureApp]) -> Void) {
+  func listCaptureApps(_ reply: @escaping ([LKXPCCaptureApp]) -> Void) {
     queue.async {
       let selected = Set(self.capturedAppBundleIDs)
       self.maintenanceQueue.async {
@@ -282,7 +304,7 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
     }
   }
 
-  public func setCapturedApps(bundleIDs: [String], withReply reply: @escaping (LKXPCResult) -> Void) {
+  func setCapturedApps(bundleIDs: [String], withReply reply: @escaping (LKXPCResult) -> Void) {
     queue.async {
       let sanitized = Self.sanitizedBundleIDs(bundleIDs)
       do {
@@ -300,20 +322,20 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
     }
   }
 
-  public func listSources(_ reply: @escaping ([LKXPCSourceState]) -> Void) {
+  func listSources(_ reply: @escaping ([LKXPCSourceState]) -> Void) {
     queue.async {
       reply(self.visibleSourcesLocked().map(self.cloneSource))
     }
   }
 
-  public func listRoutes(_ reply: @escaping ([LKXPCRoute]) -> Void) {
+  func listRoutes(_ reply: @escaping ([LKXPCRoute]) -> Void) {
     queue.async {
       self.ensureCaptureSourcesLocked()
       reply(self.routeTable.xpcRoutes())
     }
   }
 
-  public func setRoutes(_ routes: [LKXPCRoute], withReply reply: @escaping (LKXPCResult) -> Void) {
+  func setRoutes(_ routes: [LKXPCRoute], withReply reply: @escaping (LKXPCResult) -> Void) {
     queue.async {
       self.ensureCaptureSourcesLocked()
       do {
@@ -330,14 +352,16 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
     }
   }
 
-  public func requestMicrophoneAccess(_ reply: @escaping (LKXPCResult) -> Void) {
+  func requestMicrophoneAccess(_ reply: @escaping (LKXPCResult) -> Void) {
     maintenanceQueue.async {
       let granted = self.micInputManager.requestPermissionSync()
       self.queue.async {
         if granted {
+          self.microphonePermission = LKPermissionStateGranted
           self.applyInputDeviceLocked()
           reply(LKXPCResult(success: true))
         } else {
+          self.microphonePermission = LKPermissionStateDenied
           self.inputWarning = "Microphone permission denied — enable it in System Settings › Privacy & Security › Microphone."
           reply(LKXPCResult(success: false, message: self.inputWarning))
         }
@@ -345,7 +369,7 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
     }
   }
 
-  public func approveEchoRisk(
+  func approveEchoRisk(
     bundleID: String,
     approved: Bool,
     withReply reply: @escaping (LKXPCResult) -> Void
@@ -371,7 +395,7 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
     }
   }
 
-  public func saveScene(_ scene: LKXPCScene, withReply reply: @escaping (LKXPCResult) -> Void) {
+  func saveScene(_ scene: LKXPCScene, withReply reply: @escaping (LKXPCResult) -> Void) {
     queue.async {
       do {
         let routedScene = LKXPCScene(
@@ -394,7 +418,7 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
     }
   }
 
-  public func loadScene(name: String, withReply reply: @escaping (LKXPCScene?, LKXPCResult) -> Void) {
+  func loadScene(name: String, withReply reply: @escaping (LKXPCScene?, LKXPCResult) -> Void) {
     queue.async {
       do {
         let loaded = try self.sceneStore.read(named: name)
@@ -424,13 +448,13 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
     }
   }
 
-  public func listScenes(_ reply: @escaping ([String]) -> Void) {
+  func listScenes(_ reply: @escaping ([String]) -> Void) {
     queue.async {
       reply(self.sceneStore.listNames())
     }
   }
 
-  public func getStatus(_ reply: @escaping (LKXPCStatus) -> Void) {
+  func getStatus(_ reply: @escaping (LKXPCStatus) -> Void) {
     queue.async {
       let tapUnderruns = self.processTapManager.tapUnderruns()
       let tapOverruns = self.processTapManager.tapOverruns()
@@ -442,6 +466,8 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
       reply(
         LKXPCStatus(
           daemonOnline: true,
+          runtimeLifecycle: self.lifecycle,
+          microphonePermission: self.microphonePermission,
           sampleRate: self.sampleRate,
           blockFrames: Int(self.blockFrames),
           tapOverruns: tapOverruns,
@@ -473,7 +499,7 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
     }
   }
 
-  public func subscribeMeters(_ reply: @escaping ([LKXPCMeter]) -> Void) {
+  func subscribeMeters(_ reply: @escaping ([LKXPCMeter]) -> Void) {
     queue.async {
       reply(self.latestMeters)
     }
@@ -645,6 +671,10 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
   private func bootstrapDSP() {
     var config = lk_engine_config(sample_rate: UInt32(sampleRate), max_block_frames: maxFrames)
     engine = lk_engine_create(&config)
+    guard engine != nil else {
+      lastError = "Failed to initialize the LoopKit audio engine"
+      return
+    }
     syncEngineStateLocked()
     // Only eagerly activate the monitor when the user has picked a specific
     // device. For the default case we stay silent until there's audio worth
@@ -653,7 +683,6 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
       _ = applyMonitorDeviceLocked(preferredUID: requestedMonitorDeviceUID, allowFallback: true, reason: "startup")
     }
     applyBroadcastOutputLocked(force: true)
-    applyInputDeviceLocked()
   }
 
   // Resolve BlackHole 2ch (by UID, then by name) and activate the Broadcast
@@ -696,16 +725,6 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
   }
 
   private func applyInputDeviceLocked() {
-    // Request mic permission once; a denial will surface as a warning rather
-    // than stopping the daemon. Per-launch caching is fine since TCC short-
-    // circuits on subsequent calls.
-    if !micInputManager.requestPermissionSync() {
-      inputWarning = "Microphone permission denied — enable it in System Settings › Privacy & Security › Microphone."
-      activeInputDeviceUID = "system.default"
-      micInputDeviceSampleRate = 0
-      return
-    }
-
     if micInputManager.activateDevice(withUID: requestedInputDeviceUID) {
       activeInputDeviceUID = micInputManager.activeDeviceUID()
       let rate = micInputManager.inputDeviceSampleRate()

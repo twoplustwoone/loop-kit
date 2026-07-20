@@ -5,6 +5,10 @@ import LoopKitIPC
 final class LoopKitDaemonDelegate: NSObject, NSXPCListenerDelegate {
   private let service = LoopKitDaemonService()
 
+  func start() {
+    service.start()
+  }
+
   func listener(_ listener: NSXPCListener, shouldAcceptNewConnection newConnection: NSXPCConnection) -> Bool {
     let interface = NSXPCInterface(with: LoopKitDaemonXPCProtocol.self)
     configureLoopKitXPCInterface(interface)
@@ -19,5 +23,6 @@ let delegate = LoopKitDaemonDelegate()
 let listener = NSXPCListener(machServiceName: LoopKitDaemonMachService)
 listener.delegate = delegate
 listener.resume()
+delegate.start()
 
 RunLoop.main.run()

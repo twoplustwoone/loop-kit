@@ -7,6 +7,18 @@ import LoopKitOffline
 
 final class LoopKitTests: XCTestCase {
 
+    func testDaemonConstructionDoesNotStartHardware() {
+        let service = LoopKitDaemonService()
+        let statusReceived = expectation(description: "status")
+        service.getStatus { status in
+            XCTAssertEqual(status.runtimeLifecycle, LKRuntimeLifecycleStarting)
+            XCTAssertEqual(status.microphonePermission, LKPermissionStateNotRequested)
+            XCTAssertFalse(status.broadcastOutputConnected)
+            statusReceived.fulfill()
+        }
+        wait(for: [statusReceived], timeout: 1)
+    }
+
     func testEngineGainAndMixing() {
         var config = lk_engine_config(sample_rate: 48000, max_block_frames: 128)
         guard let engine = lk_engine_create(&config) else {

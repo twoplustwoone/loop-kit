@@ -9,6 +9,13 @@ public let LKMeterSourceBroadcastMix = "mix:broadcast"
 public let LKMeterSourceMonitorMix = "mix:monitor"
 public let LoopKitIPCProtocolVersion = 2
 public let LoopKitIPCMinimumSupportedVersion = 2
+public let LKRuntimeLifecycleStarting = "starting"
+public let LKRuntimeLifecycleReady = "ready"
+public let LKRuntimeLifecycleDegraded = "degraded"
+public let LKRuntimeLifecycleFailed = "failed"
+public let LKPermissionStateNotRequested = "notRequested"
+public let LKPermissionStateGranted = "granted"
+public let LKPermissionStateDenied = "denied"
 
 public enum LoopKitCapability {
   public static let processTap = "process-tap"
@@ -258,6 +265,8 @@ public final class LKXPCStatus: NSObject, NSSecureCoding {
   public static var supportsSecureCoding: Bool = true
 
   public let daemonOnline: Bool
+  public let runtimeLifecycle: String
+  public let microphonePermission: String
   public let sampleRate: Int
   public let blockFrames: Int
   public let tapOverruns: UInt64
@@ -287,6 +296,8 @@ public final class LKXPCStatus: NSObject, NSSecureCoding {
 
   public init(
     daemonOnline: Bool,
+    runtimeLifecycle: String = LKRuntimeLifecycleStarting,
+    microphonePermission: String = LKPermissionStateNotRequested,
     sampleRate: Int,
     blockFrames: Int,
     tapOverruns: UInt64 = 0,
@@ -315,6 +326,8 @@ public final class LKXPCStatus: NSObject, NSSecureCoding {
     broadcastOutputWarning: String? = nil
   ) {
     self.daemonOnline = daemonOnline
+    self.runtimeLifecycle = runtimeLifecycle
+    self.microphonePermission = microphonePermission
     self.sampleRate = sampleRate
     self.blockFrames = blockFrames
     self.tapOverruns = tapOverruns
@@ -345,6 +358,10 @@ public final class LKXPCStatus: NSObject, NSSecureCoding {
 
   public required init?(coder: NSCoder) {
     daemonOnline = coder.decodeBool(forKey: "daemonOnline")
+    runtimeLifecycle = (coder.decodeObject(of: NSString.self, forKey: "runtimeLifecycle") as String?)
+      ?? LKRuntimeLifecycleStarting
+    microphonePermission = (coder.decodeObject(of: NSString.self, forKey: "microphonePermission") as String?)
+      ?? LKPermissionStateNotRequested
     sampleRate = coder.decodeInteger(forKey: "sampleRate")
     blockFrames = coder.decodeInteger(forKey: "blockFrames")
     tapOverruns = UInt64(coder.decodeInt64(forKey: "tapOverruns"))
@@ -376,6 +393,8 @@ public final class LKXPCStatus: NSObject, NSSecureCoding {
 
   public func encode(with coder: NSCoder) {
     coder.encode(daemonOnline, forKey: "daemonOnline")
+    coder.encode(runtimeLifecycle, forKey: "runtimeLifecycle")
+    coder.encode(microphonePermission, forKey: "microphonePermission")
     coder.encode(sampleRate, forKey: "sampleRate")
     coder.encode(blockFrames, forKey: "blockFrames")
     coder.encode(Int64(tapOverruns), forKey: "tapOverruns")
