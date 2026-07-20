@@ -744,7 +744,7 @@ final class LoopKitDaemonRuntime {
       activeBroadcastDeviceUID = ""
       broadcastOutputSampleRate = 0
       broadcastOutputWarning =
-        "BlackHole 2ch not installed — run the LoopKit installer to install it."
+        "BlackHole 2ch is not installed. Use the official BlackHole installer, then reconnect LoopKit."
       return false
     }
 
