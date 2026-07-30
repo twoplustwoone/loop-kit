@@ -79,8 +79,27 @@ jobs:
           cd dist
           shasum -a 256 -c "LoopKit-${{ steps.release.outputs.version }}-Community.dmg.sha256"
 
-      - name: Create tag and publish GitHub release
+      - name: Confirm validated commit is still main
+        id: freshness
         if: steps.release.outputs.publish == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          current_main_sha="$(gh api "repos/${GITHUB_REPOSITORY}/commits/main" --jq .sha)"
+          publish=true
+          if [[ "${current_main_sha}" != "${SOURCE_SHA}" ]]; then
+            publish=false
+            echo "::notice::Skipping superseded ${SOURCE_SHA}; main is now ${current_main_sha}"
+          fi
+          echo "publish=${publish}" >>"${GITHUB_OUTPUT}"
+
+      - name: Create tag and publish GitHub release
+        if: >-
+          steps.release.outputs.publish == 'true' &&
+          steps.freshness.outputs.publish == 'true'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}

@@ -10,7 +10,7 @@ LoopKit is a self-hosted macOS loopback stack for Discord-style sessions. The Co
 
 - Never develop on or push commits directly to `main`.
 - Start each change on a focused branch created from an up-to-date `main`, and open a pull request targeting `main`.
-- Keep `main` releasable. A successful `ci` run for each merge to `main` automatically builds and publishes a Community DMG.
+- Keep `main` releasable. Successful `ci` for the current `main` commit automatically builds and publishes a Community DMG; superseded runs must not replace the latest release.
 - Do not create or push version tags manually. The release workflow creates the tag only after the DMG has built and passed validation.
 - Let pull-request CI pass before merging. Draft or incomplete work must remain on its branch.
 

@@ -74,7 +74,7 @@ The runner accepts mono or stereo 16-bit PCM and 32-bit float WAVE input and wri
 
 ## Install for friends
 
-Every successful merge to `main` produces a universal **Community DMG** on the [GitHub Releases page](https://github.com/twoplustwoone/loop-kit/releases/latest). It is ad-hoc signed and does not require a paid Apple Developer membership. Mount it, drag LoopKit to Applications, and try to launch it. On the first launch, macOS will block the unnotarized app; follow [Apple's Open Anyway procedure](https://support.apple.com/102445), then complete LoopKit's first-run setup.
+Every successful, current `main` build produces a universal **Community DMG** on the [GitHub Releases page](https://github.com/twoplustwoone/loop-kit/releases/latest). Superseded builds never replace the latest download. The DMG is ad-hoc signed and does not require a paid Apple Developer membership. Mount it, drag LoopKit to Applications, and try to launch it. On the first launch, macOS will block the unnotarized app; follow [Apple's Open Anyway procedure](https://support.apple.com/102445), then complete LoopKit's first-run setup.
 
 Verify the release's SHA-256 checksum before opening it. BlackHole 2ch remains a separate installation from its [official site](https://existential.audio/blackhole/). See [Releasing LoopKit](docs/RELEASING.md) for the exact trust model and installation steps.
 
