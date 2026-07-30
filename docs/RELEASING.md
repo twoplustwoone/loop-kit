@@ -31,6 +31,8 @@ Do not create or push release tags manually. The workflow derives a unique versi
 
 The tag and GitHub Release are created only after the artifact has built and passed release validation. Pull-request CI never publishes a release.
 
+Immediately before publication, the workflow verifies that its validated commit is still the head of `main`. If a newer merge has superseded it while the DMG was building, the older run exits successfully without creating a tag or changing `/releases/latest`; the newer run becomes the release candidate.
+
 ## Installing a Community release
 
 1. Download both Community files from the same GitHub release.
