@@ -1,64 +1,98 @@
 name: release
 
 on:
-  push:
-    tags:
-      - "v*.*.*"
+  workflow_run:
+    workflows: ["ci"]
+    types: [completed]
+    branches: [main]
 
 permissions:
   contents: write
 
-concurrency:
-  group: loopkit-release-${{ github.ref }}
-  cancel-in-progress: false
-
 jobs:
   community-dmg:
     name: Build and publish Community DMG
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: macos-14
     timeout-minutes: 90
     steps:
-      - name: Check out the tagged source
+      - name: Check out the validated main commit
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
+          ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Verify tag and project version
+      - name: Prepare automatic version
+        id: release
         shell: bash
+        env:
+          SOURCE_RUN_NUMBER: ${{ github.event.workflow_run.run_number }}
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           set -euo pipefail
-          [[ "${GITHUB_REF_TYPE}" == "tag" ]]
-          [[ "$(git rev-list -n 1 "${GITHUB_REF_NAME}")" == "${GITHUB_SHA}" ]]
-          version="${GITHUB_REF_NAME#v}"
-          [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$(git rev-parse HEAD)" == "${SOURCE_SHA}" ]]
+          [[ "${SOURCE_RUN_NUMBER}" =~ ^[1-9][0-9]*$ ]]
+
           project_version="$(sed -n 's/^[[:space:]]*MARKETING_VERSION:[[:space:]]*//p' macos/ControlApp/project.yml | sort -u)"
-          [[ "${version}" == "${project_version}" ]]
+          [[ "${project_version}" =~ ^([0-9]+)\.([0-9]+)\.[0-9]+$ ]]
+
+          version="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.${SOURCE_RUN_NUMBER}"
+          tag="v${version}"
+          publish=true
+
+          if git rev-parse --verify --quiet "refs/tags/${tag}" >/dev/null; then
+            existing_sha="$(git rev-list -n 1 "${tag}")"
+            [[ "${existing_sha}" == "${SOURCE_SHA}" ]] || {
+              echo "::error::${tag} already points to ${existing_sha}, not ${SOURCE_SHA}"
+              exit 1
+            }
+            publish=false
+            echo "::notice::${tag} already represents this commit; nothing to republish"
+          fi
+
+          {
+            echo "version=${version}"
+            echo "tag=${tag}"
+            echo "publish=${publish}"
+          } >>"${GITHUB_OUTPUT}"
 
       - name: Install XcodeGen
+        if: steps.release.outputs.publish == 'true'
         run: brew install xcodegen
 
       - name: Build ad-hoc signed Community DMG
+        if: steps.release.outputs.publish == 'true'
         shell: bash
-        run: ./scripts/community_release.sh "${GITHUB_REF_NAME#v}"
+        env:
+          LOOPKIT_BUILD_NUMBER: ${{ github.event.workflow_run.run_number }}
+        run: ./scripts/community_release.sh "${{ steps.release.outputs.version }}"
 
       - name: Verify checksum
+        if: steps.release.outputs.publish == 'true'
         shell: bash
         run: |
           cd dist
-          shasum -a 256 -c "LoopKit-${GITHUB_REF_NAME#v}-Community.dmg.sha256"
+          shasum -a 256 -c "LoopKit-${{ steps.release.outputs.version }}-Community.dmg.sha256"
 
-      - name: Publish GitHub release
+      - name: Create tag and publish GitHub release
+        if: steps.release.outputs.publish == 'true'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           set -euo pipefail
-          version="${GITHUB_REF_NAME#v}"
-          gh release create "${GITHUB_REF_NAME}" \
+          version="${{ steps.release.outputs.version }}"
+          tag="${{ steps.release.outputs.tag }}"
+          gh release create "${tag}" \
             "dist/LoopKit-${version}-Community.dmg" \
             "dist/LoopKit-${version}-Community.dmg.sha256" \
-            --verify-tag \
+            --target "${SOURCE_SHA}" \
             --generate-notes \
             --notes "Community build: ad-hoc signed and not notarized. On first launch, macOS requires System Settings → Privacy & Security → Open Anyway. Verify the SHA-256 checksum before opening." \
             --title "LoopKit ${version} Community"

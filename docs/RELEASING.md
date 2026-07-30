@@ -25,7 +25,11 @@ The script runs the C++ and Swift tests, builds universal `arm64 x86_64` Release
 
 ## GitHub release
 
-Set `MARKETING_VERSION` in `macos/ControlApp/project.yml`, commit it, and push a matching tag such as `v1.0.0`. `.github/workflows/release.yml` runs the Community release script and publishes the DMG and checksum without Apple credentials or repository secrets.
+Open a pull request from a branch into `main`. After the merge, the `ci` workflow validates that exact commit. If every CI job succeeds, `.github/workflows/release.yml` builds the Community DMG, verifies it, creates the version tag, and publishes the DMG and checksum without Apple credentials or repository secrets.
+
+Do not create or push release tags manually. The workflow derives a unique version from the major/minor values in `macos/ControlApp/project.yml` and the successful `ci` run number. For example, CI run 27 in the `1.0` release series becomes `v1.0.27`. Change `MARKETING_VERSION` on a branch when intentionally starting a new major or minor release series; its patch component is ignored by the automatic workflow.
+
+The tag and GitHub Release are created only after the artifact has built and passed release validation. Pull-request CI never publishes a release.
 
 ## Installing a Community release
 

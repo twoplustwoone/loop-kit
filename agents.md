@@ -6,6 +6,14 @@ This file provides guidance to AI Coding Agents when working with code in this r
 
 LoopKit is a self-hosted macOS loopback stack for Discord-style sessions. The ControlApp and `loopkitd` helper share local SwiftPM modules; the helper captures app/microphone audio, mixes it with the C++ engine, and writes the Broadcast mix to BlackHole 2ch. Target platform is macOS 14.2+.
 
+## Development workflow
+
+- Never develop on or push commits directly to `main`.
+- Start each change on a focused branch created from an up-to-date `main`, and open a pull request targeting `main`.
+- Keep `main` releasable. A successful `ci` run for each merge to `main` automatically builds and publishes a Community DMG.
+- Do not create or push version tags manually. The release workflow creates the tag only after the DMG has built and passed validation.
+- Let pull-request CI pass before merging. Draft or incomplete work must remain on its branch.
+
 ## Build / test
 
 Engine (pure C++, CMake, runs unit tests):
@@ -89,7 +97,7 @@ The two LoopKit processes share the `LoopKitIPC` XPC contract. The daemon core r
 
 - **Editing Xcode projects by hand does nothing** — they're regenerated from `project.yml` on every `install_local.sh` run. Change the `.yml`.
 - **C++ interoperability propagates** — executable targets importing `LoopKitDaemonCore` need `SWIFT_OBJC_INTEROP_MODE: objcxx` in XcodeGen settings.
-- **Community releases are intentionally unnotarized** — `scripts/community_release.sh` ad-hoc signs universal artifacts and the default tag workflow publishes them without Apple credentials. `scripts/release.sh` is the unused optional Developer ID path.
+- **Community releases are intentionally unnotarized** — `scripts/community_release.sh` ad-hoc signs universal artifacts. Successful CI on merged `main` commits triggers the default workflow, which builds first and then creates the tag and GitHub Release without Apple credentials. `scripts/release.sh` is the unused optional Developer ID path.
 - **Scene schema lives in `docs/ARCHITECTURE.md`** and in `LKXPCScene` — keep them in sync when adding fields.
 - **Legacy XPC coding keys** still contain `discord` for rolling-restart compatibility; Swift-facing
   status properties use the domain term `broadcast`.
