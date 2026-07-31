@@ -6,11 +6,17 @@ LoopKit writes its Broadcast mix to BlackHole 2ch, but does not redistribute, do
 
 The active BlackHole device can never be selected as LoopKit's Monitor output. Enforcing this in both the daemon and UI prevents a direct feedback loop.
 
-## The helper is embedded and app-managed
+## The audio runtime is an app-owned XPC service
 
-The helper executable is embedded at `LoopKit.app/Contents/Resources/loopkitd`. Its LaunchAgent plist is embedded under `Contents/Library/LaunchAgents` and uses `BundleProgram`. `LoopKitHelperManager`, backed by `SMAppService`, is the only application interface for registration, repair, approval status, and removal.
+The active runtime is embedded at `LoopKit.app/Contents/XPCServices/LoopKitAudioService.xpc`. ControlApp connects with `NSXPCConnection(serviceName:)`; the service accepts connections with `NSXPCListener.service()`. It stays alive when the dashboard closes because LoopKit remains a menu-bar app, and stops when the user explicitly quits LoopKit. Fresh installations do not create a Login Item or register a LaunchAgent.
 
-The helper is signed before the enclosing app. Community and Debug builds are ad-hoc signed and use identifier-only XPC requirements. Optional Developer ID releases require the exact peer identifier, Apple signing anchor, and matching Team ID.
+For one migration release, the previous raw helper and LaunchAgent plist remain dormant inside the app. Upgrade startup uses `SMAppService` only to unregister that old agent. If removal fails, the new service is blocked and setup offers retry and Login Items settings, preventing two engines from controlling the same devices.
+
+The XPC service and transitional helper are signed before the enclosing app. Community and Debug builds are ad-hoc signed and use identifier-only XPC requirements. Optional Developer ID releases require the exact peer identifier, Apple signing anchor, and matching Team ID.
+
+## The foreground app owns microphone consent
+
+ControlApp requests microphone authorization through AVFoundation, while the embedded service only refreshes authorization state and starts or stops capture. This makes fresh privacy prompts and Settings rows identify **LoopKit** with its icon. Microphone capture remains optional. Community builds may need approval again after an update because ad-hoc code identity is not guaranteed to persist; setup treats that as a recoverable permission state.
 
 ## Community distribution is the default
 

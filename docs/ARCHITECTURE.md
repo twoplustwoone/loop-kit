@@ -21,8 +21,9 @@
 2. **Mixer Engine (`engine/`)**
    - App/mic source graph with gain, mute, solo, enable flags.
    - Master gain, soft clipper, peak/rms meters.
-3. **Daemon (`macos/Daemon` + `macos/DaemonCore`)**
-   - Thin authenticated XPC facade around `LoopKitDaemonRuntime`.
+3. **Audio service (`macos/Daemon` + `macos/DaemonCore`)**
+   - App-owned service embedded at `LoopKit.app/Contents/XPCServices/LoopKitAudioService.xpc` with a thin authenticated XPC facade around `LoopKitDaemonRuntime`.
+   - Starts on demand through `NSXPCConnection(serviceName:)`, runs from `NSXPCListener.service()`, and exists only while LoopKit is running. Closing the dashboard preserves it through the menu-bar app; explicitly quitting LoopKit stops it.
    - Construction is side-effect-free. XPC resumes before asynchronous hardware startup progresses
      through `starting`, `ready`, `degraded`, or `failed`.
    - Process Tap backend (macOS 14.2+) captures selected app audio per bundle ID.
@@ -38,9 +39,10 @@
 4. **Control App (`macos/ControlApp`)**
    - SwiftUI mixer and routing controls.
    - Imports `LoopKitUI` and `LoopKitIPC`; it has no direct engine or hardware access.
-   - Polls daemon for status and meter updates.
+   - Polls the audio service for status and meter updates.
    - Shares one lifecycle-managed view model between the dashboard window and compact `MenuBarExtra` controller.
-   - Owns first-run setup and helper registration through `LoopKitHelperManager` / `SMAppService`.
+   - Owns first-run setup and requests microphone authorization from the foreground app through AVFoundation, ensuring the privacy prompt is attributed to LoopKit.
+   - On upgrade, unregisters the prior `SMAppService` LaunchAgent before connecting. Failure blocks the new service so two audio engines cannot own devices at once.
 5. **BlackHole 2ch (external CoreAudio driver)**
    - Receives the daemon's Broadcast mix; Discord selects BlackHole 2ch as its microphone input.
    - Is never bundled, downloaded, installed, or uninstalled by LoopKit.
@@ -60,10 +62,14 @@
 ## Process identity and IPC
 
 - App: `com.twoplustwoone.LoopKit`
-- Helper and Mach service: `com.twoplustwoone.LoopKit.agent`
-- IPC protocol version: `2`, negotiated with `LKXPCHandshake` before the client becomes connected.
+- Embedded XPC service: `com.twoplustwoone.LoopKit.agent`
+- IPC protocol version: `3`, negotiated with `LKXPCHandshake` before the client becomes connected.
 - Community and Debug peers use identifier-only authentication because their signatures are ad-hoc.
 - Optional Developer ID releases require the exact peer identifier, Apple signing anchor, and matching Team ID.
+
+The legacy `Contents/Resources/loopkitd` executable and LaunchAgent plist remain embedded for one migration release only. Fresh installations never register them. Existing sessions, scenes, routes, and device preferences remain in their prior Application Support locations.
+
+`captureMode` reports Process Tap capability, not whether a tap happens to be active. With no selected applications, setup reports **Ready to test**. A selected source with zero taps is **Starting** during reconciliation; a persisted warning after reconciliation is a capture fault.
 
 ## Scene schema
 

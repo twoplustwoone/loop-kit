@@ -4,7 +4,7 @@ The default artifact is a universal **Community DMG**. It is ad-hoc signed, uses
 
 ## Trust model
 
-Ad-hoc signing gives the app and embedded helper stable code identifiers and lets LoopKit authenticate its own XPC connection. It does not establish a verified publisher identity and does not make Gatekeeper trust the download.
+Ad-hoc signing gives the app and embedded XPC service local code identifiers and lets LoopKit authenticate its own XPC connection. It does not establish a verified publisher identity and does not make Gatekeeper trust the download. Because ad-hoc identity can change between builds, recipients may need to grant microphone or application-audio privacy access again after an update.
 
 The SHA-256 file lets recipients confirm that their DMG matches the artifact published on the GitHub release page. It is not a replacement for Developer ID or Apple's malware scan. Recipients should install Community builds only when they trust the repository and release source.
 
@@ -18,7 +18,7 @@ Run:
 ./scripts/community_release.sh 1.0.0
 ```
 
-The script runs the C++ and Swift tests, builds universal `arm64 x86_64` Release products, ad-hoc signs the helper first and app last with hardened runtime, validates metadata and signatures, creates and verifies the DMG, and writes these artifacts under `dist/`:
+The script runs the C++ and Swift tests, builds universal `arm64 x86_64` Release products, signs the transitional helper and active XPC service before the app, validates privacy metadata, audio-input entitlements, icons, architectures, hardened runtime, and nested signatures, creates and verifies the DMG, and writes these artifacts under `dist/`:
 
 - `LoopKit-1.0.0-Community.dmg`
 - `LoopKit-1.0.0-Community.dmg.sha256`
@@ -45,7 +45,9 @@ Immediately before publication, the workflow verifies that its validated commit 
 3. Mount the DMG and drag LoopKit to Applications.
 4. Try to open LoopKit once. macOS will report that the developer cannot be verified or that Apple cannot check it for malicious software.
 5. Open **System Settings → Privacy & Security**, scroll to Security, click **Open Anyway**, then confirm **Open**.
-6. Complete LoopKit setup and approve its embedded helper if macOS asks.
+6. Open **Setup…** in LoopKit. Microphone and guided application-audio tests are optional; macOS requests their privacy access only when those actions are used.
+
+Fresh installs do not register a Background Helper or require Login Items approval. On an upgraded development machine, a generic `loopkitd` row can remain visible in Microphone settings from an older build; new permission requests must appear as **LoopKit**. Closing the dashboard keeps audio active through the menu-bar app, while **Quit LoopKit** stops audio.
 
 The Gatekeeper exception applies to that installed build; users do not need to weaken system-wide security settings. Apple documents the same flow in [Safely open apps on your Mac](https://support.apple.com/102445).
 
