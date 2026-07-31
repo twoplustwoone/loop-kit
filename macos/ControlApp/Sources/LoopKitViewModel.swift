@@ -51,36 +51,7 @@ final class LoopKitViewModel: ObservableObject {
   func onAppear() {
     activeSurfaceCount += 1
     guard activeSurfaceCount == 1 else { return }
-
-    startupTask?.cancel()
-    startupTask = Task {
-      do {
-        try await legacyAgentMigrator.migrateIfNeeded()
-        legacyMigrationError = nil
-      } catch {
-        let message = error.localizedDescription
-        legacyMigrationError = message
-        connection = .disconnected(reason: message)
-        return
-      }
-      await daemon.setStateObserver { [weak self] state in
-        Task { @MainActor in
-          self?.connection = state
-        }
-      }
-      await daemon.reconnect()
-      await reloadDevices()
-      await reloadInputDevices()
-      await reloadCaptureApps()
-      await reloadSources()
-      await reloadRoutes()
-      await reloadScenes()
-      foregroundMicrophonePermission = microphoneAuthorization.state
-      await refreshStatus()
-      guard !Task.isCancelled, activeSurfaceCount > 0 else { return }
-      startStatusPolling()
-      startMeterPolling()
-    }
+    startAudioService(retryLegacyMigration: false)
   }
 
   func onDisappear() {
@@ -220,26 +191,7 @@ final class LoopKitViewModel: ObservableObject {
   }
 
   func retryConnection() {
-    Task {
-      if legacyMigrationError != nil {
-        do {
-          try await legacyAgentMigrator.retry()
-          legacyMigrationError = nil
-        } catch {
-          let message = error.localizedDescription
-          legacyMigrationError = message
-          connection = .disconnected(reason: message)
-          return
-        }
-      }
-      await daemon.reconnect()
-      await refreshStatus()
-      await reloadDevices()
-      await reloadInputDevices()
-      await reloadCaptureApps()
-      await reloadSources()
-      await reloadRoutes()
-    }
+    startAudioService(retryLegacyMigration: legacyMigrationError != nil)
   }
 
   func openLoginItemsSettings() {
@@ -273,6 +225,44 @@ final class LoopKitViewModel: ObservableObject {
   }
 
   // MARK: Polling
+
+  private func startAudioService(retryLegacyMigration: Bool) {
+    startupTask?.cancel()
+    startupTask = Task {
+      do {
+        if retryLegacyMigration {
+          try await legacyAgentMigrator.retry()
+        } else {
+          try await legacyAgentMigrator.migrateIfNeeded()
+        }
+        legacyMigrationError = nil
+      } catch {
+        let message = error.localizedDescription
+        legacyMigrationError = message
+        connection = .disconnected(reason: message)
+        return
+      }
+
+      guard !Task.isCancelled, activeSurfaceCount > 0 else { return }
+      await daemon.setStateObserver { [weak self] state in
+        Task { @MainActor in
+          self?.connection = state
+        }
+      }
+      await daemon.reconnect()
+      await reloadDevices()
+      await reloadInputDevices()
+      await reloadCaptureApps()
+      await reloadSources()
+      await reloadRoutes()
+      await reloadScenes()
+      foregroundMicrophonePermission = microphoneAuthorization.state
+      await refreshStatus()
+      guard !Task.isCancelled, activeSurfaceCount > 0 else { return }
+      startStatusPolling()
+      startMeterPolling()
+    }
+  }
 
   private func startStatusPolling() {
     pollingTask?.cancel()
