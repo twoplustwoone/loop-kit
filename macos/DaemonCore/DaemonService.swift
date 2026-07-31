@@ -55,7 +55,7 @@ final class LoopKitDaemonRuntime {
   private var captureAppDisplayNames: [String: String] = [:]
   private var latestMeters: [LKXPCMeter] = []
 
-  private var captureMode: String = LKCaptureModeUnavailable
+  private var captureMode: String = LKCaptureModeProcessTap
   private var activeTapCount: Int = 0
   private var captureWarning: String?
   private var monitorActive: Bool = false
@@ -914,13 +914,9 @@ final class LoopKitDaemonRuntime {
       guard let self else { return }
       self.activeTapCount = tapCount
       self.captureWarning = warning
-      if tapCount > 0 && !self.capturedAppBundleIDs.isEmpty {
-        self.captureMode = LKCaptureModeProcessTap
-      } else {
-        self.captureMode = LKCaptureModeUnavailable
-        if !self.capturedAppBundleIDs.isEmpty && self.captureWarning == nil {
-          self.captureWarning = "Selected application capture is unavailable; no fallback capture adapter is configured"
-        }
+      self.captureMode = LKCaptureModeProcessTap
+      if tapCount == 0 && !self.capturedAppBundleIDs.isEmpty && self.captureWarning == nil {
+        self.captureWarning = "Selected application capture is unavailable; no fallback capture adapter is configured"
       }
     }
   }

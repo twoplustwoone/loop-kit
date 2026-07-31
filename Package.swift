@@ -79,6 +79,7 @@ let package = Package(
                 "LoopKitIPC",
                 "LoopKitAudioCore",
                 "LoopKitEngine",
+                "LoopKitUI",
                 "LoopKitOffline"
             ],
             path: "Tests/LoopKitTests",

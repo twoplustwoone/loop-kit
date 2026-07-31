@@ -3,12 +3,86 @@ import XCTest
 import LoopKitEngine
 import LoopKitIPC
 import LoopKitOffline
+import LoopKitUI
 @testable import LoopKitDaemonCore
 
 final class LoopKitTests: XCTestCase {
     func testIPCProtocolVersionRequiresForegroundPermissionClient() {
         XCTAssertEqual(LoopKitIPCProtocolVersion, 3)
         XCTAssertEqual(LoopKitIPCMinimumSupportedVersion, 3)
+    }
+
+    func testMicrophoneSetupPresentationStates() {
+        let notRequested = LoopKitSetupPresentation.microphone(
+            permission: .notRequested,
+            inputName: nil
+        )
+        XCTAssertEqual(notRequested.state, .information)
+        XCTAssertEqual(notRequested.microphoneAction, .request)
+
+        let granted = LoopKitSetupPresentation.microphone(
+            permission: .granted,
+            inputName: "MacBook Pro Microphone"
+        )
+        XCTAssertEqual(granted.state, .ready)
+        XCTAssertTrue(granted.detail.contains("MacBook Pro Microphone"))
+
+        let denied = LoopKitSetupPresentation.microphone(permission: .denied, inputName: nil)
+        XCTAssertEqual(denied.state, .fault)
+        XCTAssertEqual(denied.microphoneAction, .openSettings)
+    }
+
+    func testApplicationAudioSetupPresentationStates() {
+        XCTAssertEqual(
+            LoopKitSetupPresentation.applicationAudio(
+                serviceReady: false,
+                captureAvailable: true,
+                selectedCount: 0,
+                activeTapCount: 0,
+                warning: nil
+            ).state,
+            .warning
+        )
+        XCTAssertEqual(
+            LoopKitSetupPresentation.applicationAudio(
+                serviceReady: true,
+                captureAvailable: true,
+                selectedCount: 0,
+                activeTapCount: 0,
+                warning: nil
+            ).state,
+            .information
+        )
+        XCTAssertEqual(
+            LoopKitSetupPresentation.applicationAudio(
+                serviceReady: true,
+                captureAvailable: true,
+                selectedCount: 1,
+                activeTapCount: 0,
+                warning: nil
+            ).state,
+            .warning
+        )
+        XCTAssertEqual(
+            LoopKitSetupPresentation.applicationAudio(
+                serviceReady: true,
+                captureAvailable: true,
+                selectedCount: 1,
+                activeTapCount: 1,
+                warning: nil
+            ).state,
+            .ready
+        )
+        XCTAssertEqual(
+            LoopKitSetupPresentation.applicationAudio(
+                serviceReady: true,
+                captureAvailable: true,
+                selectedCount: 1,
+                activeTapCount: 0,
+                warning: "Firefox is no longer running"
+            ).state,
+            .fault
+        )
     }
 
 

@@ -171,6 +171,10 @@ final class LoopKitViewModel: ObservableObject {
     }
   }
 
+  func refreshCaptureApplications() {
+    Task { await reloadCaptureApps() }
+  }
+
   func saveCurrentScene(name: String) {
     let cleaned = name.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !cleaned.isEmpty else { return }

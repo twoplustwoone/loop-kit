@@ -6,7 +6,6 @@ import SwiftUI
 @MainActor
 struct ContentView: View {
   @StateObject private var model: LoopKitViewModel
-  @StateObject private var helperManager: LoopKitHelperManager
   @AppStorage("LoopKitFirstRunSetupComplete") private var setupComplete = false
   @State private var sceneNameInput = ""
   @State private var diagnosticsExpanded = true
@@ -18,14 +17,12 @@ struct ContentView: View {
 
   init() {
     _model = StateObject(wrappedValue: LoopKitViewModel())
-    _helperManager = StateObject(wrappedValue: LoopKitHelperManager())
     startsServices = true
     showsFirstRunSetup = true
   }
 
   init(model: LoopKitViewModel, startsServices: Bool, showsFirstRunSetup: Bool = false) {
     _model = StateObject(wrappedValue: model)
-    _helperManager = StateObject(wrappedValue: LoopKitHelperManager())
     self.startsServices = startsServices
     self.showsFirstRunSetup = showsFirstRunSetup
   }
@@ -80,7 +77,6 @@ struct ContentView: View {
     ) {
       FirstRunSetupView(
         model: model,
-        helperManager: helperManager,
         onComplete: { setupComplete = true }
       )
     }
@@ -141,8 +137,10 @@ private struct DashboardTopBar: View {
       .help("Reconnect to loopkitd")
 
       Button(action: onShowSetup) {
-        Image(systemName: "questionmark.circle")
-          .frame(width: 30, height: 30)
+        Label("Setup", systemImage: "questionmark.circle")
+          .font(.system(size: 12, weight: .semibold))
+          .padding(.horizontal, 7)
+          .frame(height: 30)
       }
       .buttonStyle(.plain)
       .foregroundStyle(LoopKitTheme.secondaryText)
