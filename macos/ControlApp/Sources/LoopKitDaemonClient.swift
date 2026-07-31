@@ -194,9 +194,9 @@ actor LoopKitDaemonClient {
   }
 
   @discardableResult
-  func requestMicrophoneAccess() async -> LKXPCResult {
+  func refreshMicrophoneAuthorization() async -> LKXPCResult {
     await call(fallback: LKXPCResult(success: false, message: "Daemon unavailable")) { proxy, cont in
-      proxy.requestMicrophoneAccess { result in cont.resume(returning: result) }
+      proxy.refreshMicrophoneAuthorization { result in cont.resume(returning: result) }
     }
   }
 

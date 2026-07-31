@@ -6,6 +6,11 @@ import LoopKitOffline
 @testable import LoopKitDaemonCore
 
 final class LoopKitTests: XCTestCase {
+    func testIPCProtocolVersionRequiresForegroundPermissionClient() {
+        XCTAssertEqual(LoopKitIPCProtocolVersion, 3)
+        XCTAssertEqual(LoopKitIPCMinimumSupportedVersion, 3)
+    }
+
 
     func testPermanentProductIdentity() {
         XCTAssertEqual(LoopKitDaemonMachService, "com.twoplustwoone.LoopKit.agent")

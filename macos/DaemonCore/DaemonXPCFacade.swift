@@ -38,8 +38,8 @@ public final class LoopKitDaemonService: NSObject, LoopKitDaemonXPCProtocol {
   public func setRoutes(_ routes: [LKXPCRoute], withReply reply: @escaping (LKXPCResult) -> Void) {
     runtime.setRoutes(routes, withReply: reply)
   }
-  public func requestMicrophoneAccess(_ reply: @escaping (LKXPCResult) -> Void) {
-    runtime.requestMicrophoneAccess(reply)
+  public func refreshMicrophoneAuthorization(_ reply: @escaping (LKXPCResult) -> Void) {
+    runtime.refreshMicrophoneAuthorization(reply)
   }
   public func approveEchoRisk(bundleID: String, approved: Bool, withReply reply: @escaping (LKXPCResult) -> Void) {
     runtime.approveEchoRisk(bundleID: bundleID, approved: approved, withReply: reply)

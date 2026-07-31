@@ -7,8 +7,8 @@ public let LKRouteDestinationMonitor = "monitor"
 public let LKRouteDestinationBroadcast = "broadcast"
 public let LKMeterSourceBroadcastMix = "mix:broadcast"
 public let LKMeterSourceMonitorMix = "mix:monitor"
-public let LoopKitIPCProtocolVersion = 2
-public let LoopKitIPCMinimumSupportedVersion = 2
+public let LoopKitIPCProtocolVersion = 3
+public let LoopKitIPCMinimumSupportedVersion = 3
 public let LKRuntimeLifecycleStarting = "starting"
 public let LKRuntimeLifecycleReady = "ready"
 public let LKRuntimeLifecycleDegraded = "degraded"
@@ -640,7 +640,7 @@ public final class LKXPCScene: NSObject, NSSecureCoding {
   func listSources(_ reply: @escaping ([LKXPCSourceState]) -> Void)
   func listRoutes(_ reply: @escaping ([LKXPCRoute]) -> Void)
   func setRoutes(_ routes: [LKXPCRoute], withReply reply: @escaping (LKXPCResult) -> Void)
-  func requestMicrophoneAccess(_ reply: @escaping (LKXPCResult) -> Void)
+  func refreshMicrophoneAuthorization(_ reply: @escaping (LKXPCResult) -> Void)
   func approveEchoRisk(bundleID: String, approved: Bool, withReply reply: @escaping (LKXPCResult) -> Void)
   func saveScene(_ scene: LKXPCScene, withReply reply: @escaping (LKXPCResult) -> Void)
   func loadScene(name: String, withReply reply: @escaping (LKXPCScene?, LKXPCResult) -> Void)
@@ -688,7 +688,7 @@ public func configureLoopKitXPCInterface(_ interface: NSXPCInterface) {
     (#selector(LoopKitDaemonXPCProtocol.setInputDevice(uid:withReply:)), 0),
     (#selector(LoopKitDaemonXPCProtocol.setCapturedApps(bundleIDs:withReply:)), 0),
     (#selector(LoopKitDaemonXPCProtocol.setRoutes(_:withReply:)), 0),
-    (#selector(LoopKitDaemonXPCProtocol.requestMicrophoneAccess(_:)), 0),
+    (#selector(LoopKitDaemonXPCProtocol.refreshMicrophoneAuthorization(_:)), 0),
     (#selector(LoopKitDaemonXPCProtocol.approveEchoRisk(bundleID:approved:withReply:)), 0),
     (#selector(LoopKitDaemonXPCProtocol.saveScene(_:withReply:)), 0),
   ]

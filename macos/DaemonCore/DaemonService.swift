@@ -357,19 +357,28 @@ final class LoopKitDaemonRuntime {
     }
   }
 
-  func requestMicrophoneAccess(_ reply: @escaping (LKXPCResult) -> Void) {
+  func refreshMicrophoneAuthorization(_ reply: @escaping (LKXPCResult) -> Void) {
     maintenanceQueue.async {
-      let granted = self.micInputManager.requestPermissionSync()
+      let permission = self.micInputManager.permissionStatus()
       self.queue.async {
-        if granted {
+        switch permission {
+        case .granted:
           self.microphonePermission = LKPermissionStateGranted
           self.applyInputDeviceLocked()
-          reply(LKXPCResult(success: true))
-        } else {
+        case .denied:
           self.microphonePermission = LKPermissionStateDenied
+          self.micInputManager.stop()
           self.inputWarning = "Microphone permission denied — enable it in System Settings › Privacy & Security › Microphone."
-          reply(LKXPCResult(success: false, message: self.inputWarning))
+        case .notDetermined:
+          self.microphonePermission = LKPermissionStateNotRequested
+          self.micInputManager.stop()
+          self.inputWarning = nil
+        @unknown default:
+          self.microphonePermission = LKPermissionStateDenied
+          self.micInputManager.stop()
+          self.inputWarning = "Microphone authorization is unavailable."
         }
+        reply(LKXPCResult(success: true, message: self.inputWarning))
       }
     }
   }

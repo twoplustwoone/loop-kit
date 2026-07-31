@@ -178,26 +178,6 @@ NSString* deviceUIDForID(AudioDeviceID id) {
   }
 }
 
-- (BOOL)requestPermissionSync {
-  const LKMicrophonePermissionStatus current = [self permissionStatus];
-  if (current == LKMicrophonePermissionStatusGranted) return YES;
-  if (current == LKMicrophonePermissionStatusDenied) return NO;
-
-  __block BOOL granted = NO;
-  dispatch_semaphore_t sem = dispatch_semaphore_create(0);
-  [AVCaptureDevice requestAccessForMediaType:AVMediaTypeAudio
-                           completionHandler:^(BOOL allowed) {
-                             granted = allowed;
-                             dispatch_semaphore_signal(sem);
-                           }];
-  // Wait up to 60 s for the user to respond to the TCC prompt (Apple's UI
-  // doesn't time out). Return NO if the semaphore never fires.
-  if (dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, 60 * NSEC_PER_SEC)) != 0) {
-    return NO;
-  }
-  return granted;
-}
-
 - (BOOL)activateDeviceWithUID:(NSString*)deviceUID {
   std::lock_guard<std::mutex> lock(stateMutex_);
   self.requestedUID = (deviceUID.length == 0) ? @"system.default" : deviceUID;

@@ -12,11 +12,6 @@ typedef NS_ENUM(NSInteger, LKMicrophonePermissionStatus) {
 
 - (instancetype)initWithSampleRate:(double)engineSampleRate maxFrames:(uint32_t)maxFrames;
 
-// Requests microphone access synchronously. Returns YES if granted, NO otherwise.
-// Safe to call multiple times — subsequent calls short-circuit once a decision
-// is recorded in TCC.
-- (BOOL)requestPermissionSync;
-
 // Reads the current TCC decision without presenting a permission prompt.
 - (LKMicrophonePermissionStatus)permissionStatus;
 

@@ -26,6 +26,7 @@ final class LoopKitViewModel: ObservableObject {
   @Published var broadcastOutputReady: Bool = false
   @Published var connection: LoopKitConnectionState = .connecting
   @Published private(set) var legacyMigrationError: String?
+  @Published private(set) var foregroundMicrophonePermission = LKPermissionStateNotRequested
   @Published var lastActionMessage: String?
   /// Suppresses differential source-list updates while the user is
   /// actively dragging a control, so SwiftUI bindings aren't torn down
@@ -34,6 +35,7 @@ final class LoopKitViewModel: ObservableObject {
 
   private let daemon = LoopKitDaemonClient()
   private let legacyAgentMigrator = LoopKitLegacyAgentMigrator()
+  private let microphoneAuthorization = MicrophoneAuthorizationController()
   private var activeSurfaceCount = 0
   private var startupTask: Task<Void, Never>?
   private var pollingTask: Task<Void, Never>?
@@ -73,6 +75,7 @@ final class LoopKitViewModel: ObservableObject {
       await reloadSources()
       await reloadRoutes()
       await reloadScenes()
+      foregroundMicrophonePermission = microphoneAuthorization.state
       await refreshStatus()
       guard !Task.isCancelled, activeSurfaceCount > 0 else { return }
       startStatusPolling()
@@ -241,13 +244,28 @@ final class LoopKitViewModel: ObservableObject {
 
   func requestMicrophoneAccess() {
     Task {
-      let result = await daemon.requestMicrophoneAccess()
-      lastActionMessage = result.success
+      let granted = await microphoneAuthorization.requestAccess()
+      foregroundMicrophonePermission = microphoneAuthorization.state
+      await refreshMicrophoneAuthorization()
+      lastActionMessage = granted
         ? "Microphone access granted"
-        : (result.message ?? "Microphone access was not granted")
-      await refreshStatus()
-      await reloadInputDevices()
+        : "Microphone access was not granted"
     }
+  }
+
+  func refreshMicrophoneAuthorization() async {
+    foregroundMicrophonePermission = microphoneAuthorization.state
+    _ = await daemon.refreshMicrophoneAuthorization()
+    await refreshStatus()
+    await reloadInputDevices()
+  }
+
+  func refreshMicrophoneAuthorizationAfterActivation() {
+    Task { await refreshMicrophoneAuthorization() }
+  }
+
+  func openMicrophoneSettings() {
+    microphoneAuthorization.openSettings()
   }
 
   // MARK: Polling
