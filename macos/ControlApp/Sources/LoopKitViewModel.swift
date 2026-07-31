@@ -25,6 +25,7 @@ final class LoopKitViewModel: ObservableObject {
   @Published var broadcastOutputWarning: String?
   @Published var broadcastOutputReady: Bool = false
   @Published var connection: LoopKitConnectionState = .connecting
+  @Published private(set) var legacyMigrationError: String?
   @Published var lastActionMessage: String?
   /// Suppresses differential source-list updates while the user is
   /// actively dragging a control, so SwiftUI bindings aren't torn down
@@ -32,6 +33,7 @@ final class LoopKitViewModel: ObservableObject {
   @Published var interactingSourceID: String?
 
   private let daemon = LoopKitDaemonClient()
+  private let legacyAgentMigrator = LoopKitLegacyAgentMigrator()
   private var activeSurfaceCount = 0
   private var startupTask: Task<Void, Never>?
   private var pollingTask: Task<Void, Never>?
@@ -50,6 +52,15 @@ final class LoopKitViewModel: ObservableObject {
 
     startupTask?.cancel()
     startupTask = Task {
+      do {
+        try await legacyAgentMigrator.migrateIfNeeded()
+        legacyMigrationError = nil
+      } catch {
+        let message = error.localizedDescription
+        legacyMigrationError = message
+        connection = .disconnected(reason: message)
+        return
+      }
       await daemon.setStateObserver { [weak self] state in
         Task { @MainActor in
           self?.connection = state
@@ -203,6 +214,17 @@ final class LoopKitViewModel: ObservableObject {
 
   func retryConnection() {
     Task {
+      if legacyMigrationError != nil {
+        do {
+          try await legacyAgentMigrator.retry()
+          legacyMigrationError = nil
+        } catch {
+          let message = error.localizedDescription
+          legacyMigrationError = message
+          connection = .disconnected(reason: message)
+          return
+        }
+      }
       await daemon.reconnect()
       await refreshStatus()
       await reloadDevices()
@@ -211,6 +233,10 @@ final class LoopKitViewModel: ObservableObject {
       await reloadSources()
       await reloadRoutes()
     }
+  }
+
+  func openLoginItemsSettings() {
+    legacyAgentMigrator.openLoginItemsSettings()
   }
 
   func requestMicrophoneAccess() {

@@ -25,7 +25,7 @@ actor LoopKitDaemonClient {
   func reconnect() async {
     notify(.connecting)
     connection?.invalidate()
-    let conn = NSXPCConnection(machServiceName: LoopKitDaemonMachService, options: [])
+    let conn = NSXPCConnection(serviceName: LoopKitDaemonMachService)
 #if DEBUG || LOOPKIT_COMMUNITY
     conn.setCodeSigningRequirement(
       LoopKitCodeSigningRequirement.identifierOnly(identifier: LoopKitCodeSigningRequirement.agentIdentifier)
