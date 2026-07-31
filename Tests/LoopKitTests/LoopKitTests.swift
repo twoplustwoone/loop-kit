@@ -85,6 +85,29 @@ final class LoopKitTests: XCTestCase {
         )
     }
 
+    func testLegacyAgentMigrationPolicy() {
+        XCTAssertEqual(
+            LoopKitLegacyAgentMigrationPolicy.action(for: .enabled),
+            .unregister
+        )
+        XCTAssertEqual(
+            LoopKitLegacyAgentMigrationPolicy.action(for: .requiresApproval),
+            .unregister
+        )
+        XCTAssertEqual(
+            LoopKitLegacyAgentMigrationPolicy.action(for: .notRegistered),
+            .proceed
+        )
+        XCTAssertEqual(
+            LoopKitLegacyAgentMigrationPolicy.action(for: .notFound),
+            .proceed
+        )
+        XCTAssertEqual(
+            LoopKitLegacyAgentMigrationPolicy.action(for: .unknown),
+            .block
+        )
+    }
+
 
     func testPermanentProductIdentity() {
         XCTAssertEqual(LoopKitDaemonMachService, "com.twoplustwoone.LoopKit.agent")

@@ -21,6 +21,7 @@ targets:
       SWIFT_VERSION: 5.10
       SWIFT_OBJC_INTEROP_MODE: objcxx
       CODE_SIGN_IDENTITY: "-"
+      CODE_SIGN_ENTITLEMENTS: ../Daemon/LoopKitAudio.entitlements
       CREATE_INFOPLIST_SECTION_IN_BINARY: YES
       INFOPLIST_FILE: ../Daemon/Info.plist
     dependencies:
@@ -71,14 +72,11 @@ targets:
       PRODUCT_BUNDLE_IDENTIFIER: com.twoplustwoone.LoopKit
       MARKETING_VERSION: 1.0.0
       CURRENT_PROJECT_VERSION: 1
-      GENERATE_INFOPLIST_FILE: YES
+      GENERATE_INFOPLIST_FILE: NO
+      INFOPLIST_FILE: Resources/Info.plist
       SWIFT_VERSION: 5.10
       CODE_SIGN_IDENTITY: "-"
       CODE_SIGN_ENTITLEMENTS: Resources/LoopKit.entitlements
-      INFOPLIST_KEY_CFBundleDisplayName: LoopKit
-      INFOPLIST_KEY_LoopKitTeamIdentifier: $(DEVELOPMENT_TEAM)
-      INFOPLIST_KEY_NSAudioCaptureUsageDescription: LoopKit captures audio only from applications you explicitly select.
-      INFOPLIST_KEY_NSMicrophoneUsageDescription: LoopKit needs microphone access so it can mix your voice with captured app audio.
       ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     dependencies:
       - target: LoopKitAgent

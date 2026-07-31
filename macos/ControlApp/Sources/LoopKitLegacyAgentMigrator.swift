@@ -1,4 +1,5 @@
 import Foundation
+import LoopKitUI
 import ServiceManagement
 
 @MainActor
@@ -31,12 +32,12 @@ final class LoopKitLegacyAgentMigrator {
   func migrateIfNeeded() async throws {
     guard !defaults.bool(forKey: Self.completionKey) else { return }
 
-    switch service.status {
-    case .enabled, .requiresApproval:
+    switch LoopKitLegacyAgentMigrationPolicy.action(for: migrationStatus) {
+    case .unregister:
       try await unregister()
-    case .notRegistered, .notFound:
+    case .proceed:
       break
-    @unknown default:
+    case .block:
       throw MigrationError.unavailable("macOS returned an unknown service state")
     }
 
@@ -61,6 +62,21 @@ final class LoopKitLegacyAgentMigrator {
           continuation.resume(returning: ())
         }
       }
+    }
+  }
+
+  private var migrationStatus: LoopKitLegacyAgentMigrationPolicy.Status {
+    switch service.status {
+    case .enabled:
+      return .enabled
+    case .requiresApproval:
+      return .requiresApproval
+    case .notRegistered:
+      return .notRegistered
+    case .notFound:
+      return .notFound
+    @unknown default:
+      return .unknown
     }
   }
 }

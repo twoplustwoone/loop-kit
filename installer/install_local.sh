@@ -2,8 +2,8 @@
 set -euo pipefail
 
 # Developer-only local build/install. Public users install a notarized DMG.
-# The app owns helper registration through SMAppService; this script never
-# installs a loose daemon, writes a LaunchAgent, or downloads BlackHole.
+# The app owns an embedded XPC audio service; this script never installs a
+# loose daemon, registers a LaunchAgent, or downloads BlackHole.
 
 SKIP_TESTS=0
 VERBOSE=0
@@ -14,7 +14,7 @@ for arg in "$@"; do
     --help|-h)
       echo "Usage: $0 [--skip-tests] [--verbose]"
       echo "Builds and copies LoopKit.app to /Applications for local development."
-      echo "Launch LoopKit afterward and complete setup to register its embedded helper."
+      echo "Launch LoopKit afterward and complete its optional audio setup."
       exit 0
       ;;
     *) echo "Unknown flag: $arg" >&2; exit 2 ;;
@@ -66,12 +66,12 @@ else
   step "Skipping tests (--skip-tests)"
 fi
 
-step "Generating the combined app/helper project"
+step "Generating the combined app/audio-service project"
 xcodegen generate \
   --spec "${ROOT_DIR}/macos/ControlApp/project.yml" \
   --project "${ROOT_DIR}/macos/ControlApp"
 
-step "Building LoopKit.app with its embedded helper"
+step "Building LoopKit.app with its embedded XPC audio service"
 run_xcodebuild \
   -project "${ROOT_DIR}/macos/ControlApp/LoopKit-ControlApp.xcodeproj" \
   -scheme ControlApp \
@@ -80,7 +80,10 @@ run_xcodebuild \
   build
 
 [[ -d "$APP_PRODUCT" ]] || die "app product not found at $APP_PRODUCT"
-[[ -x "$APP_PRODUCT/Contents/Resources/loopkitd" ]] || die "embedded helper is missing"
+[[ -x "$APP_PRODUCT/Contents/XPCServices/LoopKitAudioService.xpc/Contents/MacOS/LoopKitAudioService" ]] \
+  || die "embedded XPC audio service is missing"
+[[ -x "$APP_PRODUCT/Contents/Resources/loopkitd" ]] \
+  || die "transitional legacy helper is missing"
 
 step "Installing the development app"
 rm -rf "$APP_INSTALL_PATH"
@@ -89,5 +92,5 @@ rm -rf "$APP_INSTALL_PATH"
 
 step "Developer install complete"
 echo "Open ${APP_INSTALL_PATH} and follow first-run setup."
-echo "LoopKit will register its embedded helper through macOS Login Items."
+echo "LoopKit starts its embedded audio service automatically while the app is running."
 echo "BlackHole is intentionally separate: https://existential.audio/blackhole/"

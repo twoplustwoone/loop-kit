@@ -14,6 +14,8 @@ STAGING="${RELEASE_ROOT}/dmg-root"
 DIST_DIR="${ROOT_DIR}/dist"
 APP_PATH="${DERIVED_DATA}/Build/Products/Release/LoopKit.app"
 HELPER_PATH="${APP_PATH}/Contents/Resources/loopkitd"
+SERVICE_PATH="${APP_PATH}/Contents/XPCServices/LoopKitAudioService.xpc"
+SERVICE_BINARY="${SERVICE_PATH}/Contents/MacOS/LoopKitAudioService"
 DMG_PATH="${DIST_DIR}/LoopKit-${VERSION}.dmg"
 CHECKSUM_PATH="${DMG_PATH}.sha256"
 
@@ -65,16 +67,26 @@ xcodebuild \
   build
 
 [[ -x "$HELPER_PATH" ]] || { echo "embedded helper missing" >&2; exit 1; }
+[[ -x "$SERVICE_BINARY" ]] || { echo "embedded XPC audio service missing" >&2; exit 1; }
 
 /usr/bin/codesign \
   --force --options runtime --timestamp \
   --identifier com.twoplustwoone.LoopKit.agent \
+  --entitlements "${ROOT_DIR}/macos/Daemon/LoopKitAudio.entitlements" \
   --sign "$DEVELOPER_ID_APPLICATION" \
   "$HELPER_PATH"
 
 /usr/bin/codesign \
   --force --options runtime --timestamp \
+  --identifier com.twoplustwoone.LoopKit.agent \
+  --entitlements "${ROOT_DIR}/macos/Daemon/LoopKitAudio.entitlements" \
+  --sign "$DEVELOPER_ID_APPLICATION" \
+  "$SERVICE_PATH"
+
+/usr/bin/codesign \
+  --force --options runtime --timestamp \
   --identifier com.twoplustwoone.LoopKit \
+  --entitlements "${ROOT_DIR}/macos/ControlApp/Resources/LoopKit.entitlements" \
   --sign "$DEVELOPER_ID_APPLICATION" \
   "$APP_PATH"
 

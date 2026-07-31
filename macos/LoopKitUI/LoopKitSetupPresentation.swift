@@ -96,3 +96,30 @@ public enum LoopKitSetupPresentation {
     )
   }
 }
+
+public enum LoopKitLegacyAgentMigrationPolicy {
+  public enum Status: Equatable {
+    case enabled
+    case requiresApproval
+    case notRegistered
+    case notFound
+    case unknown
+  }
+
+  public enum Action: Equatable {
+    case unregister
+    case proceed
+    case block
+  }
+
+  public static func action(for status: Status) -> Action {
+    switch status {
+    case .enabled, .requiresApproval:
+      return .unregister
+    case .notRegistered, .notFound:
+      return .proceed
+    case .unknown:
+      return .block
+    }
+  }
+}
