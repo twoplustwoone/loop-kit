@@ -83,6 +83,7 @@ struct ContentView: View {
     }
     .onChange(of: setupComplete) { _, complete in
       if complete {
+        updateModel.restoreCachedAvailability(setupComplete: true)
         updateModel.checkAutomaticallyIfEligible(setupComplete: true)
       }
     }

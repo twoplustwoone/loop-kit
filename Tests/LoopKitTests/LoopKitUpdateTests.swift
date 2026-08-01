@@ -132,6 +132,68 @@ final class LoopKitUpdateTests: XCTestCase {
     XCTAssertNil(state.availableRelease)
   }
 
+  func testBackgroundResultsReconcileAnOpenAvailabilityPresentation() {
+    let cached = release("2.0.0")
+    let newer = release("3.0.0")
+    var newerState = LoopKitUpdateStateMachine(
+      availableRelease: cached,
+      presentation: .available(installedVersion: "1.0.0", release: cached)
+    )
+
+    guard case .started(let newerCheckID, _) = newerState.beginCheck(
+      trigger: .automatic(setupComplete: true)
+    ) else {
+      return XCTFail("Expected the automatic check to start")
+    }
+    _ = newerState.completeCheck(
+      id: newerCheckID,
+      result: .available(installed: version("1.0.0"), release: newer)
+    )
+    XCTAssertEqual(newerState.availableRelease, newer)
+    XCTAssertEqual(
+      newerState.presentation,
+      .available(installedVersion: "1.0.0", release: newer)
+    )
+
+    var currentState = LoopKitUpdateStateMachine(
+      availableRelease: cached,
+      presentation: .available(installedVersion: "1.0.0", release: cached)
+    )
+    guard case .started(let currentCheckID, _) = currentState.beginCheck(
+      trigger: .automatic(setupComplete: true)
+    ) else {
+      return XCTFail("Expected the automatic check to start")
+    }
+    _ = currentState.completeCheck(
+      id: currentCheckID,
+      result: .current(installed: version("2.0.0"), latest: version("2.0.0"))
+    )
+    XCTAssertNil(currentState.availableRelease)
+    XCTAssertNil(currentState.presentation)
+  }
+
+  func testBackgroundFailureKeepsAnOpenAvailabilityPresentation() {
+    let cached = release("2.0.0")
+    let cachedPresentation = LoopKitUpdatePresentation.available(
+      installedVersion: "1.0.0",
+      release: cached
+    )
+    var state = LoopKitUpdateStateMachine(
+      availableRelease: cached,
+      presentation: cachedPresentation
+    )
+
+    guard case .started(let checkID, _) = state.beginCheck(
+      trigger: .automatic(setupComplete: true)
+    ) else {
+      return XCTFail("Expected the automatic check to start")
+    }
+    _ = state.completeCheck(id: checkID, result: .failed(.httpStatus(429)))
+
+    XCTAssertEqual(state.availableRelease, cached)
+    XCTAssertEqual(state.presentation, cachedPresentation)
+  }
+
   func testGitHubReleaseDecodingAndEligibility() throws {
     let data = Data(#"""
     {

@@ -93,11 +93,17 @@ public struct LoopKitUpdateStateMachine: Sendable {
     }
 
     let shouldPresent = activeCheck.shouldPresentResult
+    let isPresentingAvailable: Bool
+    if case .available = presentation {
+      isPresentingAvailable = true
+    } else {
+      isPresentingAvailable = false
+    }
     switch result {
     case .available(let installed, let release):
       successfulResultGeneration &+= 1
       availableRelease = release
-      if shouldPresent {
+      if shouldPresent || isPresentingAvailable {
         presentation = .available(
           installedVersion: installed.description,
           release: release
@@ -109,6 +115,8 @@ public struct LoopKitUpdateStateMachine: Sendable {
       availableRelease = nil
       if shouldPresent {
         presentation = .current(installedVersion: installed.description)
+      } else if isPresentingAvailable {
+        presentation = nil
       }
 
     case .failed(let error):
