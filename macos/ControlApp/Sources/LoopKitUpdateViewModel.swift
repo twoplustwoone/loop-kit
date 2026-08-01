@@ -9,6 +9,7 @@ final class LoopKitUpdateViewModel: ObservableObject {
 
   @Published private(set) var availableRelease: GitHubRelease?
   @Published private(set) var presentation: Presentation?
+  @Published private(set) var announcement: LoopKitUpdateAnnouncement?
 
   let installedVersion: String
 
@@ -33,6 +34,7 @@ final class LoopKitUpdateViewModel: ObservableObject {
     stateMachine = LoopKitUpdateStateMachine()
     availableRelease = stateMachine.availableRelease
     presentation = stateMachine.presentation
+    announcement = stateMachine.announcement
   }
 
   private init(
@@ -48,6 +50,7 @@ final class LoopKitUpdateViewModel: ObservableObject {
     )
     self.availableRelease = stateMachine.availableRelease
     self.presentation = stateMachine.presentation
+    announcement = stateMachine.announcement
     openURL = { _ in false }
     hasRestoredCache = true
   }
@@ -84,7 +87,7 @@ final class LoopKitUpdateViewModel: ObservableObject {
   func viewRelease(_ release: GitHubRelease) {
     guard release.isEligible else { return }
     guard openURL(release.releaseURL) else {
-      stateMachine.reportReleaseOpenFailure()
+      stateMachine.reportReleaseOpenFailure(release)
       publishState()
       return
     }
@@ -120,6 +123,7 @@ final class LoopKitUpdateViewModel: ObservableObject {
   private func publishState() {
     availableRelease = stateMachine.availableRelease
     presentation = stateMachine.presentation
+    announcement = stateMachine.announcement
   }
 }
 
@@ -161,7 +165,7 @@ extension LoopKitUpdateViewModel {
     LoopKitUpdateViewModel(
       installedVersion: "1.0.12",
       availableRelease: nil,
-      presentation: .failed(
+      presentation: .checkFailed(
         message: "LoopKit could not reach GitHub. Check your connection and try again."
       )
     )

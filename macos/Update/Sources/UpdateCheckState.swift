@@ -4,7 +4,18 @@ public enum LoopKitUpdatePresentation: Equatable, Sendable {
   case checking
   case current(installedVersion: String)
   case available(installedVersion: String, release: GitHubRelease)
-  case failed(message: String)
+  case checkFailed(message: String)
+  case releaseOpenFailed(release: GitHubRelease, message: String)
+}
+
+public struct LoopKitUpdateAnnouncement: Equatable, Sendable {
+  public let id: UInt64
+  public let message: String
+
+  public init(id: UInt64, message: String) {
+    self.id = id
+    self.message = message
+  }
 }
 
 public enum LoopKitUpdateCheckStart: Equatable, Sendable {
@@ -26,9 +37,11 @@ public struct LoopKitUpdateStateMachine: Sendable {
 
   public private(set) var availableRelease: GitHubRelease?
   public private(set) var presentation: LoopKitUpdatePresentation?
+  public private(set) var announcement: LoopKitUpdateAnnouncement?
 
   private var activeCheck: ActiveCheck?
   private var nextCheckID: UInt64 = 0
+  private var nextAnnouncementID: UInt64 = 0
   private var successfulResultGeneration: UInt64 = 0
 
   public init(
@@ -109,21 +122,25 @@ public struct LoopKitUpdateStateMachine: Sendable {
           release: release
         )
       }
+      if shouldPresent {
+        announce("LoopKit update \(release.version?.description ?? release.tagName) is available.")
+      }
 
     case .current(let installed, _):
       successfulResultGeneration &+= 1
       availableRelease = nil
       if shouldPresent {
         presentation = .current(installedVersion: installed.description)
+        announce("LoopKit \(installed.description) is up to date.")
       } else if isPresentingAvailable {
         presentation = nil
       }
 
     case .failed(let error):
       if shouldPresent {
-        presentation = .failed(
-          message: error.errorDescription ?? "The update check could not complete."
-        )
+        let message = error.errorDescription ?? "The update check could not complete."
+        presentation = .checkFailed(message: message)
+        announce("Update check failed. \(message)")
       }
     }
     return .finished
@@ -149,9 +166,14 @@ public struct LoopKitUpdateStateMachine: Sendable {
     presentation = nil
   }
 
-  public mutating func reportReleaseOpenFailure() {
-    presentation = .failed(
-      message: "LoopKit could not open the release page. Check your default browser and try again."
-    )
+  public mutating func reportReleaseOpenFailure(_ release: GitHubRelease) {
+    let message = "LoopKit could not open the release page. Check your default browser and try again."
+    presentation = .releaseOpenFailed(release: release, message: message)
+    announce(message)
+  }
+
+  private mutating func announce(_ message: String) {
+    nextAnnouncementID &+= 1
+    announcement = LoopKitUpdateAnnouncement(id: nextAnnouncementID, message: message)
   }
 }

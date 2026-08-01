@@ -22,6 +22,10 @@ struct LoopKitUpdateView: View {
     .background(LoopKitTheme.background)
     .foregroundStyle(LoopKitTheme.text)
     .preferredColorScheme(.dark)
+    .onChange(of: model.announcement) { _, announcement in
+      guard let announcement else { return }
+      AccessibilityNotification.Announcement(announcement.message).post()
+    }
   }
 
   private var header: some View {
@@ -74,7 +78,7 @@ struct LoopKitUpdateView: View {
     case .available(let installedVersion, let release):
       availableContent(installedVersion: installedVersion, release: release)
 
-    case .failed(let message):
+    case .checkFailed(let message):
       VStack(alignment: .leading, spacing: 14) {
         Text("Couldn’t check for updates")
           .font(.title3.weight(.semibold))
@@ -82,6 +86,18 @@ struct LoopKitUpdateView: View {
           .font(.callout)
           .foregroundStyle(LoopKitTheme.secondaryText)
         Text("No audio settings or routing were changed.")
+          .font(.caption)
+          .foregroundStyle(LoopKitTheme.secondaryText)
+      }
+
+    case .releaseOpenFailed(_, let message):
+      VStack(alignment: .leading, spacing: 14) {
+        Text("Couldn’t open the release page")
+          .font(.title3.weight(.semibold))
+        Text(message)
+          .font(.callout)
+          .foregroundStyle(LoopKitTheme.secondaryText)
+        Text("The update is still available. No audio settings or routing were changed.")
           .font(.caption)
           .foregroundStyle(LoopKitTheme.secondaryText)
       }
@@ -152,10 +168,15 @@ struct LoopKitUpdateView: View {
           .keyboardShortcut(.cancelAction)
         Button("View Release") { model.viewRelease(release) }
           .keyboardShortcut(.defaultAction)
-      case .failed:
+      case .checkFailed:
         Button("Close") { model.dismissPresentation() }
           .keyboardShortcut(.cancelAction)
         Button("Try Again") { model.checkManually() }
+          .keyboardShortcut(.defaultAction)
+      case .releaseOpenFailed(let release, _):
+        Button("Close") { model.dismissPresentation() }
+          .keyboardShortcut(.cancelAction)
+        Button("Try Again") { model.viewRelease(release) }
           .keyboardShortcut(.defaultAction)
       case nil:
         EmptyView()
@@ -168,7 +189,8 @@ struct LoopKitUpdateView: View {
     case .checking: return "Checking for Updates"
     case .current: return "You’re Up to Date"
     case .available: return "Update Available"
-    case .failed: return "Update Check Failed"
+    case .checkFailed: return "Update Check Failed"
+    case .releaseOpenFailed: return "Release Page Failed"
     case nil: return "Software Update"
     }
   }
@@ -178,13 +200,19 @@ struct LoopKitUpdateView: View {
     case .checking: return "arrow.triangle.2.circlepath"
     case .current: return "checkmark.circle.fill"
     case .available: return "arrow.down.circle.fill"
-    case .failed: return "wifi.exclamationmark"
+    case .checkFailed: return "wifi.exclamationmark"
+    case .releaseOpenFailed: return "safari.fill"
     case nil: return "arrow.down.circle"
     }
   }
 
   private var headerColor: Color {
-    if case .failed = model.presentation { return LoopKitTheme.warning }
+    switch model.presentation {
+    case .checkFailed, .releaseOpenFailed:
+      return LoopKitTheme.warning
+    default:
+      break
+    }
     return LoopKitTheme.teal
   }
 }

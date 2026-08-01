@@ -28,6 +28,15 @@ final class LoopKitUpdateTests: XCTestCase {
     XCTAssertEqual(version("v2.4.6"), version("2.4.6"))
   }
 
+  func testOversizedNumericPrereleaseIdentifiersUseNumericOrdering() {
+    let smaller = version("1.0.0-9999999999999999999")
+    let larger = version("1.0.0-10000000000000000000")
+
+    XCTAssertLessThan(smaller, larger)
+    XCTAssertLessThan(larger, version("1.0.0-alpha"))
+    XCTAssertEqual(larger.description, "1.0.0-10000000000000000000")
+  }
+
   func testManualCheckKeepsVisibleResultWhenAutomaticTriggerJoins() {
     let available = release("2.0.0")
     var state = LoopKitUpdateStateMachine()
@@ -192,6 +201,78 @@ final class LoopKitUpdateTests: XCTestCase {
 
     XCTAssertEqual(state.availableRelease, cached)
     XCTAssertEqual(state.presentation, cachedPresentation)
+  }
+
+  func testVisibleCheckResultsPublishOperationSpecificAnnouncements() {
+    let available = release("2.0.0")
+
+    var availableState = LoopKitUpdateStateMachine()
+    guard case .started(let availableCheckID, _) = availableState.beginCheck(trigger: .manual)
+    else {
+      return XCTFail("Expected the available check to start")
+    }
+    _ = availableState.completeCheck(
+      id: availableCheckID,
+      result: .available(installed: version("1.0.0"), release: available)
+    )
+    XCTAssertEqual(availableState.announcement?.message, "LoopKit update 2.0.0 is available.")
+
+    var currentState = LoopKitUpdateStateMachine()
+    guard case .started(let currentCheckID, _) = currentState.beginCheck(trigger: .manual) else {
+      return XCTFail("Expected the current check to start")
+    }
+    _ = currentState.completeCheck(
+      id: currentCheckID,
+      result: .current(installed: version("2.0.0"), latest: version("2.0.0"))
+    )
+    XCTAssertEqual(currentState.announcement?.message, "LoopKit 2.0.0 is up to date.")
+
+    var failedState = LoopKitUpdateStateMachine()
+    guard case .started(let failedCheckID, _) = failedState.beginCheck(trigger: .manual) else {
+      return XCTFail("Expected the failed check to start")
+    }
+    _ = failedState.completeCheck(id: failedCheckID, result: .failed(.httpStatus(429)))
+    guard case .checkFailed(let message) = failedState.presentation else {
+      return XCTFail("Expected a check-specific failure")
+    }
+    XCTAssertTrue(failedState.announcement?.message.contains(message) == true)
+  }
+
+  func testBackgroundResultsDoNotPublishAnnouncements() {
+    let available = release("2.0.0")
+    var state = LoopKitUpdateStateMachine(
+      availableRelease: available,
+      presentation: .available(installedVersion: "1.0.0", release: available)
+    )
+
+    guard case .started(let checkID, _) = state.beginCheck(
+      trigger: .automatic(setupComplete: true)
+    ) else {
+      return XCTFail("Expected the automatic check to start")
+    }
+    _ = state.completeCheck(
+      id: checkID,
+      result: .available(installed: version("1.0.0"), release: release("3.0.0"))
+    )
+
+    XCTAssertNil(state.announcement)
+  }
+
+  func testReleaseOpenFailurePreservesReleaseForOperationSpecificRetry() {
+    let available = release("2.0.0")
+    var state = LoopKitUpdateStateMachine(
+      availableRelease: available,
+      presentation: .available(installedVersion: "1.0.0", release: available)
+    )
+
+    state.reportReleaseOpenFailure(available)
+
+    guard case .releaseOpenFailed(let retryRelease, let message) = state.presentation else {
+      return XCTFail("Expected a release-open failure")
+    }
+    XCTAssertEqual(retryRelease, available)
+    XCTAssertTrue(message.contains("default browser"))
+    XCTAssertEqual(state.announcement?.message, message)
   }
 
   func testGitHubReleaseDecodingAndEligibility() throws {

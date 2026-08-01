@@ -2,7 +2,7 @@ import Foundation
 
 public struct LoopKitVersion: Comparable, Codable, Hashable, Sendable, CustomStringConvertible {
   private enum PrereleaseIdentifier: Codable, Hashable, Sendable {
-    case numeric(Int)
+    case numeric(String)
     case text(String)
   }
 
@@ -40,8 +40,8 @@ public struct LoopKitVersion: Comparable, Codable, Hashable, Sendable, CustomStr
       let rawPrerelease = String(versionParts[1])
       guard Self.identifiersAreValid(rawPrerelease, allowLeadingZeroes: false) else { return nil }
       prerelease = rawPrerelease.split(separator: ".").map { identifier in
-        if let number = Int(identifier) {
-          return .numeric(number)
+        if identifier.allSatisfy(\.isNumber) {
+          return .numeric(String(identifier))
         }
         return .text(String(identifier))
       }
@@ -58,7 +58,7 @@ public struct LoopKitVersion: Comparable, Codable, Hashable, Sendable, CustomStr
     if !prerelease.isEmpty {
       let suffix = prerelease.map { identifier in
         switch identifier {
-        case .numeric(let number): return String(number)
+        case .numeric(let number): return number
         case .text(let text): return text
         }
       }.joined(separator: ".")
@@ -92,6 +92,9 @@ public struct LoopKitVersion: Comparable, Codable, Hashable, Sendable, CustomStr
       if left == right { continue }
       switch (left, right) {
       case (.numeric(let lhsNumber), .numeric(let rhsNumber)):
+        if lhsNumber.count != rhsNumber.count {
+          return lhsNumber.count < rhsNumber.count
+        }
         return lhsNumber < rhsNumber
       case (.numeric, .text):
         return true
