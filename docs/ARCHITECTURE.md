@@ -17,6 +17,7 @@
    - `LoopKitAudioCore`: Objective-C++ adapters for Process Tap, microphone input, and AUHAL output.
    - `LoopKitDaemonCore`: runtime state, typed Routing Graph, DSP scheduling, device policy, and persistence.
    - `LoopKitUI`: hardware-independent SwiftUI design tokens and audio controls used by ControlApp.
+   - `LoopKitUpdate`: hardware-independent release parsing, semantic version comparison, scheduling, and update-check persistence.
    - `LoopKitOffline`: WAVE codec and block-based DSP runner with no CoreAudio dependency.
 2. **Mixer Engine (`engine/`)**
    - App/mic source graph with gain, mute, solo, enable flags.
@@ -38,9 +39,10 @@
      quarantines malformed state for diagnosis.
 4. **Control App (`macos/ControlApp`)**
    - SwiftUI mixer and routing controls.
-   - Imports `LoopKitUI` and `LoopKitIPC`; it has no direct engine or hardware access.
+   - Imports `LoopKitUI`, `LoopKitIPC`, and `LoopKitUpdate`; it has no direct engine or hardware access.
    - Polls the audio service for status and meter updates.
    - Shares one lifecycle-managed view model between the dashboard window and compact `MenuBarExtra` controller.
+   - Owns one shared update-check model across app-menu, dashboard, and menu-bar surfaces. It checks the latest stable public GitHub Release only after first-run setup and hands manual installation off to the exact release page.
    - Owns first-run setup and requests microphone authorization from the foreground app through AVFoundation, ensuring the privacy prompt is attributed to LoopKit.
    - On upgrade, unregisters the prior `SMAppService` LaunchAgent before connecting. Failure blocks the new service so two audio engines cannot own devices at once.
 5. **BlackHole 2ch (external CoreAudio driver)**

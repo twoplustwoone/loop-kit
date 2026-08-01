@@ -33,6 +33,12 @@ The tag and GitHub Release are created only after the artifact has built and pas
 
 Immediately before publication, the workflow verifies that its validated commit is still the head of `main`. If a newer merge has superseded it while the DMG was building, the older run exits successfully without creating a tag or changing `/releases/latest`; the newer run becomes the release candidate.
 
+## In-app update discovery
+
+After first-run setup, LoopKit checks the repository's latest public GitHub Release at most once every 24 hours. Automatic checks are informational and quiet: a current build or a failed offline check does not interrupt audio or show an error. Users can also choose **LoopKit → Check for Updates…** at any time for an explicit result.
+
+When a newer stable release is available, LoopKit shows it in the dashboard and menu-bar controller. **View Release** opens that exact HTTPS GitHub release page. LoopKit does not download, verify, or install the release in this phase; users still follow the Community installation steps below. Draft, prerelease, malformed, and older releases are never offered as updates.
+
 ## Installing a Community release
 
 1. Download both Community files from the same GitHub release.

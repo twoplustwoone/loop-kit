@@ -6,7 +6,9 @@ import SwiftUI
 @MainActor
 struct ContentView: View {
   @StateObject private var model: LoopKitViewModel
+  @ObservedObject private var updateModel: LoopKitUpdateViewModel
   @AppStorage("LoopKitFirstRunSetupComplete") private var setupComplete = false
+  @Environment(\.scenePhase) private var scenePhase
   @State private var sceneNameInput = ""
   @State private var diagnosticsExpanded = true
   @State private var sourceControlsExpanded = true
@@ -17,12 +19,19 @@ struct ContentView: View {
 
   init() {
     _model = StateObject(wrappedValue: LoopKitViewModel())
+    updateModel = LoopKitUpdateViewModel()
     startsServices = true
     showsFirstRunSetup = true
   }
 
-  init(model: LoopKitViewModel, startsServices: Bool, showsFirstRunSetup: Bool = false) {
+  init(
+    model: LoopKitViewModel,
+    updateModel: LoopKitUpdateViewModel,
+    startsServices: Bool,
+    showsFirstRunSetup: Bool = false
+  ) {
     _model = StateObject(wrappedValue: model)
+    self.updateModel = updateModel
     self.startsServices = startsServices
     self.showsFirstRunSetup = showsFirstRunSetup
   }
@@ -31,6 +40,7 @@ struct ContentView: View {
     VStack(spacing: 0) {
       DashboardTopBar(
         model: model,
+        updateModel: updateModel,
         sourceControlsExpanded: $sourceControlsExpanded,
         onShowSetup: { setupComplete = false }
       )
@@ -62,12 +72,25 @@ struct ContentView: View {
     .preferredColorScheme(.dark)
     .frame(minWidth: 1080, minHeight: 720)
     .onAppear {
+      updateModel.restoreCachedAvailability(setupComplete: setupComplete)
+      updateModel.checkAutomaticallyIfEligible(setupComplete: setupComplete)
       guard startsServices else { return }
       model.onAppear()
     }
     .onDisappear {
       guard startsServices else { return }
       model.onDisappear()
+    }
+    .onChange(of: setupComplete) { _, complete in
+      if complete {
+        updateModel.restoreCachedAvailability(setupComplete: true)
+        updateModel.checkAutomaticallyIfEligible(setupComplete: true)
+      }
+    }
+    .onChange(of: scenePhase) { _, phase in
+      if phase == .active {
+        updateModel.checkAutomaticallyIfEligible(setupComplete: setupComplete)
+      }
     }
     .sheet(
       isPresented: Binding(
@@ -79,6 +102,24 @@ struct ContentView: View {
         model: model,
         onComplete: { setupComplete = true }
       )
+      .sheet(
+        isPresented: Binding(
+          get: { updateModel.presentation != nil },
+          set: { if !$0 { updateModel.dismissPresentation() } }
+        )
+      ) {
+        LoopKitUpdateView(model: updateModel)
+      }
+    }
+    .sheet(
+      isPresented: Binding(
+        get: {
+          (!showsFirstRunSetup || setupComplete) && updateModel.presentation != nil
+        },
+        set: { if !$0 { updateModel.dismissPresentation() } }
+      )
+    ) {
+      LoopKitUpdateView(model: updateModel)
     }
   }
 }
@@ -87,6 +128,7 @@ struct ContentView: View {
 
 private struct DashboardTopBar: View {
   @ObservedObject var model: LoopKitViewModel
+  @ObservedObject var updateModel: LoopKitUpdateViewModel
   @Binding var sourceControlsExpanded: Bool
   let onShowSetup: () -> Void
 
@@ -112,6 +154,17 @@ private struct DashboardTopBar: View {
       }
 
       Spacer()
+
+      if let release = updateModel.availableRelease {
+        Button {
+          updateModel.presentAvailableUpdate()
+        } label: {
+          LoopKitStatusPill("UPDATE \(release.version?.description ?? release.tagName)")
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Update available, version \(release.version?.description ?? release.tagName)")
+        .help("Review the available LoopKit release")
+      }
 
       connectionStatus
 
@@ -1107,7 +1160,11 @@ extension LoopKitViewModel {
 }
 
 #Preview("Obsidian Studio Dashboard") {
-  ContentView(model: .demoModel(), startsServices: false)
+  ContentView(
+    model: .demoModel(),
+    updateModel: .previewAvailable(),
+    startsServices: false
+  )
     .frame(width: 1400, height: 900)
 }
 #endif
