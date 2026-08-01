@@ -6,7 +6,7 @@ Loopback-style stack:
 - `engine/`: realtime C++ mixer core and C API, exposed to Swift as `LoopKitEngine`.
 - `macos/AudioCore/`: Objective-C++ Process Tap, microphone input, and audio output adapters.
 - `macos/DaemonCore/`: testable Swift daemon state, routing, DSP, and scene persistence logic.
-- `macos/Daemon/`: thin `loopkitd` mach-service entry point.
+- `macos/Daemon/`: thin entry point for the embedded audio XPC service.
 - `macos/Shared/Sources/`: the `LoopKitIPC` XPC protocol and secure-coding DTO module.
 - `macos/LoopKitUI/`: reusable Obsidian Studio tokens, meters, faders, and Source strips.
 - `macos/ControlApp/`: SwiftUI mixer UI for gains, mute/solo, monitor output, and scene save/load.
@@ -24,7 +24,7 @@ Loopback-style stack:
 - Hardware-independent Swift tests for offline DSP mixing, WAVE I/O, Monitor failover policy,
   IPC secure coding, gain boundaries, routing, and scene JSON persistence.
 - Offline WAVE runner (`loopkit_offline_dsp`) for processing fixtures without CoreAudio.
-- `loopkitd` XPC service surface:
+- Embedded audio-service XPC surface:
   - `SetMasterGain`, `SetSourceParams`, `SetMuteSolo`, `SetMonitorDevice`,
   - `ListDevices`, `ListCaptureApps`, `SetCapturedApps`, `ListSources`,
   - `SaveScene`, `LoadScene`, `ListScenes`,
@@ -41,9 +41,9 @@ Loopback-style stack:
 
 ## App-specific quickstart
 
-1. Launch LoopKit and complete setup to register the helper, verify BlackHole, and choose a physical Monitor.
-2. Select one or more apps in **Sources**.
-3. Confirm status shows `Process Tap` mode. If capture is unavailable, LoopKit shows a warning and
+1. Launch LoopKit, open **Setup…**, verify BlackHole, and choose a physical Monitor. Microphone access and the application-audio test are optional.
+2. Select one or more apps in **Sources**, or choose a running app in the guided setup test.
+3. Confirm the selected source changes from **Starting** to **Capturing**. If capture is unavailable, LoopKit shows a warning and
    does not claim that application audio is being captured.
 4. In Discord, choose **BlackHole 2ch** as your microphone input.
 
@@ -84,7 +84,7 @@ Verify the release's SHA-256 checksum before opening it. BlackHole 2ch remains a
 ./installer/install_local.sh
 ```
 
-The script runs tests, generates the combined Xcode project, and copies `LoopKit.app` to Applications. The app registers its embedded helper with `SMAppService`. The script never downloads or installs BlackHole.
+The script runs tests, generates the combined Xcode project, and copies `LoopKit.app` to Applications. Its embedded audio XPC service starts automatically while LoopKit is running. The script never downloads or installs BlackHole.
 
 To remove:
 
@@ -100,6 +100,9 @@ To remove:
 - In Process Tap mode, LoopKit uses redirect-muted playback (`CATapMuted`): captured apps no longer
   play directly to speakers and are heard through LoopKit monitor output.
 - Community releases are ad-hoc signed, not notarized, and require a one-time Gatekeeper override.
+- Microphone permission is requested by the foreground LoopKit app, so fresh installations appear as **LoopKit** in Privacy & Security. An old generic `loopkitd` row may remain on machines that ran an earlier developer build.
+- Ad-hoc identity can change between Community builds, so macOS may ask for privacy permission again after an update. Setup detects the current state and provides the appropriate request or Settings action.
+- Closing the dashboard leaves LoopKit running in the menu bar; choosing **Quit LoopKit** stops the embedded audio service and audio routing.
 - Optional Developer ID notarization tooling remains available but is not part of the default release workflow.
 - Automatic updates and crash reporting are intentionally deferred.
 

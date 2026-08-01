@@ -6,6 +6,7 @@ import SwiftUI
 struct MenuBarControllerView: View {
   @ObservedObject var model: LoopKitViewModel
   @Environment(\.openWindow) private var openWindow
+  @AppStorage("LoopKitFirstRunSetupComplete") private var setupComplete = true
   @State private var monitorPickerPresented = false
 
   private let startsServices: Bool
@@ -236,6 +237,13 @@ struct MenuBarControllerView: View {
         .font(LoopKitTheme.mono(9))
         .foregroundStyle(LoopKitTheme.secondaryText)
       Spacer()
+      Button("Setup…") {
+        setupComplete = false
+        openDashboard()
+      }
+      .buttonStyle(.plain)
+      .font(.system(size: 12, weight: .medium))
+      .foregroundStyle(LoopKitTheme.secondaryText)
       Button("Open Dashboard") { openDashboard() }
         .buttonStyle(.plain)
         .font(.system(size: 12, weight: .semibold))

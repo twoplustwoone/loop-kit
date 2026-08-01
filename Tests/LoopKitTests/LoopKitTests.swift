@@ -3,9 +3,149 @@ import XCTest
 import LoopKitEngine
 import LoopKitIPC
 import LoopKitOffline
+import LoopKitUI
 @testable import LoopKitDaemonCore
 
 final class LoopKitTests: XCTestCase {
+    func testIPCProtocolVersionRequiresForegroundPermissionClient() {
+        XCTAssertEqual(LoopKitIPCProtocolVersion, 3)
+        XCTAssertEqual(LoopKitIPCMinimumSupportedVersion, 3)
+    }
+
+    func testMicrophoneSetupPresentationStates() {
+        let notRequested = LoopKitSetupPresentation.microphone(
+            permission: .notRequested,
+            inputName: nil
+        )
+        XCTAssertEqual(notRequested.state, .information)
+        XCTAssertEqual(notRequested.microphoneAction, .request)
+
+        let granted = LoopKitSetupPresentation.microphone(
+            permission: .granted,
+            inputName: "MacBook Pro Microphone"
+        )
+        XCTAssertEqual(granted.state, .ready)
+        XCTAssertTrue(granted.detail.contains("MacBook Pro Microphone"))
+
+        let denied = LoopKitSetupPresentation.microphone(permission: .denied, inputName: nil)
+        XCTAssertEqual(denied.state, .fault)
+        XCTAssertEqual(denied.microphoneAction, .openSettings)
+    }
+
+    func testApplicationAudioSetupPresentationStates() {
+        XCTAssertEqual(
+            LoopKitSetupPresentation.applicationAudio(
+                serviceReady: false,
+                captureAvailable: true,
+                selectedCount: 0,
+                activeTapCount: 0,
+                warning: nil
+            ).state,
+            .warning
+        )
+        XCTAssertEqual(
+            LoopKitSetupPresentation.applicationAudio(
+                serviceReady: true,
+                captureAvailable: true,
+                selectedCount: 0,
+                activeTapCount: 0,
+                warning: nil
+            ).state,
+            .information
+        )
+        XCTAssertEqual(
+            LoopKitSetupPresentation.applicationAudio(
+                serviceReady: true,
+                captureAvailable: true,
+                selectedCount: 1,
+                activeTapCount: 0,
+                warning: nil
+            ).state,
+            .warning
+        )
+        XCTAssertEqual(
+            LoopKitSetupPresentation.applicationAudio(
+                serviceReady: true,
+                captureAvailable: true,
+                selectedCount: 1,
+                activeTapCount: 1,
+                warning: nil
+            ).state,
+            .ready
+        )
+        XCTAssertEqual(
+            LoopKitSetupPresentation.applicationAudio(
+                serviceReady: true,
+                captureAvailable: true,
+                selectedCount: 1,
+                activeTapCount: 0,
+                warning: "Firefox is no longer running"
+            ).state,
+            .fault
+        )
+    }
+
+    func testSetupRefreshDoesNotRestartHealthyAudioService() {
+        XCTAssertEqual(
+            LoopKitSetupPresentation.refreshAction(
+                serviceConnected: true,
+                serviceConnecting: false,
+                legacyMigrationFailed: false
+            ),
+            .reloadData
+        )
+        XCTAssertEqual(
+            LoopKitSetupPresentation.refreshAction(
+                serviceConnected: false,
+                serviceConnecting: true,
+                legacyMigrationFailed: false
+            ),
+            .wait
+        )
+        XCTAssertEqual(
+            LoopKitSetupPresentation.refreshAction(
+                serviceConnected: false,
+                serviceConnecting: false,
+                legacyMigrationFailed: true
+            ),
+            .restartService(retryLegacyMigration: true)
+        )
+    }
+
+    func testEmbeddedServiceAuthenticatesAcceptedConnection() {
+        XCTAssertEqual(
+            LoopKitXPCPeerAuthentication.placement(for: .embeddedService),
+            .acceptedConnection
+        )
+        XCTAssertEqual(
+            LoopKitXPCPeerAuthentication.placement(for: .machService),
+            .listener
+        )
+    }
+
+    func testLegacyAgentMigrationPolicy() {
+        XCTAssertEqual(
+            LoopKitLegacyAgentMigrationPolicy.action(for: .enabled),
+            .unregister
+        )
+        XCTAssertEqual(
+            LoopKitLegacyAgentMigrationPolicy.action(for: .requiresApproval),
+            .unregister
+        )
+        XCTAssertEqual(
+            LoopKitLegacyAgentMigrationPolicy.action(for: .notRegistered),
+            .proceed
+        )
+        XCTAssertEqual(
+            LoopKitLegacyAgentMigrationPolicy.action(for: .notFound),
+            .proceed
+        )
+        XCTAssertEqual(
+            LoopKitLegacyAgentMigrationPolicy.action(for: .unknown),
+            .block
+        )
+    }
+
 
     func testPermanentProductIdentity() {
         XCTAssertEqual(LoopKitDaemonMachService, "com.twoplustwoone.LoopKit.agent")

@@ -55,7 +55,7 @@ final class LoopKitDaemonRuntime {
   private var captureAppDisplayNames: [String: String] = [:]
   private var latestMeters: [LKXPCMeter] = []
 
-  private var captureMode: String = LKCaptureModeUnavailable
+  private var captureMode: String = LKCaptureModeProcessTap
   private var activeTapCount: Int = 0
   private var captureWarning: String?
   private var monitorActive: Bool = false
@@ -357,19 +357,28 @@ final class LoopKitDaemonRuntime {
     }
   }
 
-  func requestMicrophoneAccess(_ reply: @escaping (LKXPCResult) -> Void) {
+  func refreshMicrophoneAuthorization(_ reply: @escaping (LKXPCResult) -> Void) {
     maintenanceQueue.async {
-      let granted = self.micInputManager.requestPermissionSync()
+      let permission = self.micInputManager.permissionStatus()
       self.queue.async {
-        if granted {
+        switch permission {
+        case .granted:
           self.microphonePermission = LKPermissionStateGranted
           self.applyInputDeviceLocked()
-          reply(LKXPCResult(success: true))
-        } else {
+        case .denied:
           self.microphonePermission = LKPermissionStateDenied
+          self.micInputManager.stop()
           self.inputWarning = "Microphone permission denied — enable it in System Settings › Privacy & Security › Microphone."
-          reply(LKXPCResult(success: false, message: self.inputWarning))
+        case .notDetermined:
+          self.microphonePermission = LKPermissionStateNotRequested
+          self.micInputManager.stop()
+          self.inputWarning = nil
+        @unknown default:
+          self.microphonePermission = LKPermissionStateDenied
+          self.micInputManager.stop()
+          self.inputWarning = "Microphone authorization is unavailable."
         }
+        reply(LKXPCResult(success: true, message: self.inputWarning))
       }
     }
   }
@@ -905,13 +914,9 @@ final class LoopKitDaemonRuntime {
       guard let self else { return }
       self.activeTapCount = tapCount
       self.captureWarning = warning
-      if tapCount > 0 && !self.capturedAppBundleIDs.isEmpty {
-        self.captureMode = LKCaptureModeProcessTap
-      } else {
-        self.captureMode = LKCaptureModeUnavailable
-        if !self.capturedAppBundleIDs.isEmpty && self.captureWarning == nil {
-          self.captureWarning = "Selected application capture is unavailable; no fallback capture adapter is configured"
-        }
+      self.captureMode = LKCaptureModeProcessTap
+      if tapCount == 0 && !self.capturedAppBundleIDs.isEmpty && self.captureWarning == nil {
+        self.captureWarning = "Selected application capture is unavailable; no fallback capture adapter is configured"
       }
     }
   }

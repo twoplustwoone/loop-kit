@@ -1,6 +1,8 @@
 ## Useful references
 - [BlackHole](https://existential.audio/blackhole/) (external macOS loopback driver; not redistributed by LoopKit).
-- [SMAppService](https://developer.apple.com/documentation/servicemanagement/smappservice) (embedded helper registration and repair).
+- [NSXPCConnection](https://developer.apple.com/documentation/foundation/nsxpcconnection) (app-owned embedded service transport).
+- [NSXPCListener.service()](https://developer.apple.com/documentation/foundation/nsxpclistener/service()) (embedded XPC service listener).
+- [SMAppService](https://developer.apple.com/documentation/servicemanagement/smappservice) (legacy LaunchAgent removal during upgrade only).
 - ProxyAudioDevice (minimal HAL plug-in that forwards to another device).
 - libASPL (library to simplify Audio Server Plug-ins).
 - Roc VAD (driver + controller split on top of libASPL).

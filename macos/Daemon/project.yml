@@ -21,6 +21,7 @@ targets:
       SWIFT_VERSION: 5.10
       SWIFT_OBJC_INTEROP_MODE: objcxx
       CODE_SIGN_IDENTITY: "-"
+      CODE_SIGN_ENTITLEMENTS: LoopKitAudio.entitlements
       # Tool-style targets don't get an Info.plist bundle, but TCC needs the
       # microphone usage description. CREATE_INFOPLIST_SECTION_IN_BINARY
       # embeds it into __TEXT,__info_plist.

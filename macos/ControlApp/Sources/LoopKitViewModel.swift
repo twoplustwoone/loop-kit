@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import LoopKitIPC
+import LoopKitUI
 
 /// @MainActor so all @Published writes happen on the main thread and we can
 /// safely read state from SwiftUI without ceremony.
@@ -25,6 +26,8 @@ final class LoopKitViewModel: ObservableObject {
   @Published var broadcastOutputWarning: String?
   @Published var broadcastOutputReady: Bool = false
   @Published var connection: LoopKitConnectionState = .connecting
+  @Published private(set) var legacyMigrationError: String?
+  @Published private(set) var foregroundMicrophonePermission = LKPermissionStateNotRequested
   @Published var lastActionMessage: String?
   /// Suppresses differential source-list updates while the user is
   /// actively dragging a control, so SwiftUI bindings aren't torn down
@@ -32,6 +35,8 @@ final class LoopKitViewModel: ObservableObject {
   @Published var interactingSourceID: String?
 
   private let daemon = LoopKitDaemonClient()
+  private let legacyAgentMigrator = LoopKitLegacyAgentMigrator()
+  private let microphoneAuthorization = MicrophoneAuthorizationController()
   private var activeSurfaceCount = 0
   private var startupTask: Task<Void, Never>?
   private var pollingTask: Task<Void, Never>?
@@ -47,26 +52,7 @@ final class LoopKitViewModel: ObservableObject {
   func onAppear() {
     activeSurfaceCount += 1
     guard activeSurfaceCount == 1 else { return }
-
-    startupTask?.cancel()
-    startupTask = Task {
-      await daemon.setStateObserver { [weak self] state in
-        Task { @MainActor in
-          self?.connection = state
-        }
-      }
-      await daemon.reconnect()
-      await reloadDevices()
-      await reloadInputDevices()
-      await reloadCaptureApps()
-      await reloadSources()
-      await reloadRoutes()
-      await reloadScenes()
-      await refreshStatus()
-      guard !Task.isCancelled, activeSurfaceCount > 0 else { return }
-      startStatusPolling()
-      startMeterPolling()
-    }
+    startAudioService(retryLegacyMigration: false)
   }
 
   func onDisappear() {
@@ -157,6 +143,10 @@ final class LoopKitViewModel: ObservableObject {
     }
   }
 
+  func refreshCaptureApplications() {
+    Task { await reloadCaptureApps() }
+  }
+
   func saveCurrentScene(name: String) {
     let cleaned = name.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !cleaned.isEmpty else { return }
@@ -202,29 +192,107 @@ final class LoopKitViewModel: ObservableObject {
   }
 
   func retryConnection() {
+    startAudioService(retryLegacyMigration: legacyMigrationError != nil)
+  }
+
+  func refreshSetup() {
+    let serviceConnected: Bool
+    let serviceConnecting: Bool
+    switch connection {
+    case .connected:
+      serviceConnected = true
+      serviceConnecting = false
+    case .connecting:
+      serviceConnected = false
+      serviceConnecting = true
+    case .disconnected:
+      serviceConnected = false
+      serviceConnecting = false
+    }
+
+    switch LoopKitSetupPresentation.refreshAction(
+      serviceConnected: serviceConnected,
+      serviceConnecting: serviceConnecting,
+      legacyMigrationFailed: legacyMigrationError != nil
+    ) {
+    case .reloadData:
+      Task { await reloadSetupData() }
+    case .wait:
+      break
+    case .restartService(let retryLegacyMigration):
+      startAudioService(retryLegacyMigration: retryLegacyMigration)
+    }
+  }
+
+  func openLoginItemsSettings() {
+    legacyAgentMigrator.openLoginItemsSettings()
+  }
+
+  func requestMicrophoneAccess() {
     Task {
+      let granted = await microphoneAuthorization.requestAccess()
+      foregroundMicrophonePermission = microphoneAuthorization.state
+      await refreshMicrophoneAuthorization()
+      lastActionMessage = granted
+        ? "Microphone access granted"
+        : "Microphone access was not granted"
+    }
+  }
+
+  func refreshMicrophoneAuthorization() async {
+    foregroundMicrophonePermission = microphoneAuthorization.state
+    _ = await daemon.refreshMicrophoneAuthorization()
+    await refreshStatus()
+    await reloadInputDevices()
+  }
+
+  func refreshMicrophoneAuthorizationAfterActivation() {
+    Task { await refreshMicrophoneAuthorization() }
+  }
+
+  func openMicrophoneSettings() {
+    microphoneAuthorization.openSettings()
+  }
+
+  // MARK: Polling
+
+  private func startAudioService(retryLegacyMigration: Bool) {
+    startupTask?.cancel()
+    startupTask = Task {
+      do {
+        if retryLegacyMigration {
+          try await legacyAgentMigrator.retry()
+        } else {
+          try await legacyAgentMigrator.migrateIfNeeded()
+        }
+        legacyMigrationError = nil
+      } catch {
+        let message = error.localizedDescription
+        legacyMigrationError = message
+        connection = .disconnected(reason: message)
+        return
+      }
+
+      guard !Task.isCancelled, activeSurfaceCount > 0 else { return }
+      await daemon.setStateObserver { [weak self] state in
+        Task { @MainActor in
+          self?.connection = state
+        }
+      }
       await daemon.reconnect()
-      await refreshStatus()
       await reloadDevices()
       await reloadInputDevices()
       await reloadCaptureApps()
       await reloadSources()
       await reloadRoutes()
-    }
-  }
-
-  func requestMicrophoneAccess() {
-    Task {
-      let result = await daemon.requestMicrophoneAccess()
-      lastActionMessage = result.success
-        ? "Microphone access granted"
-        : (result.message ?? "Microphone access was not granted")
+      await reloadScenes()
+      foregroundMicrophonePermission = microphoneAuthorization.state
       await refreshStatus()
-      await reloadInputDevices()
+      guard !Task.isCancelled, activeSurfaceCount > 0 else { return }
+      startStatusPolling()
+      startMeterPolling()
     }
   }
-
-  // MARK: Polling
 
   private func startStatusPolling() {
     pollingTask?.cancel()
@@ -293,6 +361,17 @@ final class LoopKitViewModel: ObservableObject {
 
   private func reloadScenes() async {
     scenes = await daemon.listScenes()
+  }
+
+  private func reloadSetupData() async {
+    await reloadDevices()
+    await reloadInputDevices()
+    await reloadCaptureApps()
+    await reloadSources()
+    await reloadRoutes()
+    await reloadScenes()
+    foregroundMicrophonePermission = microphoneAuthorization.state
+    await refreshStatus()
   }
 
   private func refreshStatus() async {

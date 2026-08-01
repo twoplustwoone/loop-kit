@@ -21,8 +21,36 @@ targets:
       SWIFT_VERSION: 5.10
       SWIFT_OBJC_INTEROP_MODE: objcxx
       CODE_SIGN_IDENTITY: "-"
+      CODE_SIGN_ENTITLEMENTS: ../Daemon/LoopKitAudio.entitlements
       CREATE_INFOPLIST_SECTION_IN_BINARY: YES
       INFOPLIST_FILE: ../Daemon/Info.plist
+    dependencies:
+      - package: LoopKit
+        product: LoopKitDaemonCore
+      - package: LoopKit
+        product: LoopKitIPC
+      - sdk: AppKit.framework
+      - sdk: CoreAudio.framework
+      - sdk: AudioToolbox.framework
+      - sdk: AVFoundation.framework
+      - sdk: CoreMedia.framework
+  LoopKitAudioService:
+    type: xpc-service
+    platform: macOS
+    sources:
+      - path: ../Daemon/Sources
+      - path: Resources/Assets.xcassets
+    settings:
+      PRODUCT_NAME: LoopKitAudioService
+      PRODUCT_BUNDLE_IDENTIFIER: com.twoplustwoone.LoopKit.agent
+      MARKETING_VERSION: 1.0.0
+      CURRENT_PROJECT_VERSION: 1
+      SWIFT_VERSION: 5.10
+      SWIFT_OBJC_INTEROP_MODE: objcxx
+      CODE_SIGN_IDENTITY: "-"
+      CODE_SIGN_ENTITLEMENTS: ../Daemon/LoopKitAudio.entitlements
+      INFOPLIST_FILE: ../Daemon/XPCService-Info.plist
+      ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     dependencies:
       - package: LoopKit
         product: LoopKitDaemonCore
@@ -44,18 +72,21 @@ targets:
       PRODUCT_BUNDLE_IDENTIFIER: com.twoplustwoone.LoopKit
       MARKETING_VERSION: 1.0.0
       CURRENT_PROJECT_VERSION: 1
-      GENERATE_INFOPLIST_FILE: YES
+      GENERATE_INFOPLIST_FILE: NO
+      INFOPLIST_FILE: Resources/Info.plist
       SWIFT_VERSION: 5.10
       CODE_SIGN_IDENTITY: "-"
-      INFOPLIST_KEY_CFBundleDisplayName: LoopKit
-      INFOPLIST_KEY_LoopKitTeamIdentifier: $(DEVELOPMENT_TEAM)
+      CODE_SIGN_ENTITLEMENTS: Resources/LoopKit.entitlements
       ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     dependencies:
       - target: LoopKitAgent
+      - target: LoopKitAudioService
+        embed: true
       - package: LoopKit
         product: LoopKitIPC
       - package: LoopKit
         product: LoopKitUI
+      - sdk: AVFoundation.framework
     postBuildScripts:
       - name: Embed LoopKit LaunchAgent
         script: |
