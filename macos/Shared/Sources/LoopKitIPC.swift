@@ -54,6 +54,27 @@ public enum LoopKitCodeSigningRequirement {
   }
 }
 
+public enum LoopKitXPCListenerKind: Equatable {
+  case embeddedService
+  case machService
+}
+
+public enum LoopKitXPCPeerAuthentication {
+  public enum Placement: Equatable {
+    case acceptedConnection
+    case listener
+  }
+
+  public static func placement(for listenerKind: LoopKitXPCListenerKind) -> Placement {
+    switch listenerKind {
+    case .embeddedService:
+      return .acceptedConnection
+    case .machService:
+      return .listener
+    }
+  }
+}
+
 public enum LoopKitCapability {
   public static let processTap = "process-tap"
   public static let microphonePermission = "microphone-permission"

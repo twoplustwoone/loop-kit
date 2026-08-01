@@ -112,6 +112,17 @@ final class LoopKitTests: XCTestCase {
         )
     }
 
+    func testEmbeddedServiceAuthenticatesAcceptedConnection() {
+        XCTAssertEqual(
+            LoopKitXPCPeerAuthentication.placement(for: .embeddedService),
+            .acceptedConnection
+        )
+        XCTAssertEqual(
+            LoopKitXPCPeerAuthentication.placement(for: .machService),
+            .listener
+        )
+    }
+
     func testLegacyAgentMigrationPolicy() {
         XCTAssertEqual(
             LoopKitLegacyAgentMigrationPolicy.action(for: .enabled),
