@@ -1,3 +1,4 @@
+import Foundation
 import LoopKitIPC
 import LoopKitUI
 import SwiftUI
@@ -5,14 +6,20 @@ import SwiftUI
 @MainActor
 struct MenuBarControllerView: View {
   @ObservedObject var model: LoopKitViewModel
+  @ObservedObject var updateModel: LoopKitUpdateViewModel
   @Environment(\.openWindow) private var openWindow
   @AppStorage("LoopKitFirstRunSetupComplete") private var setupComplete = true
   @State private var monitorPickerPresented = false
 
   private let startsServices: Bool
 
-  init(model: LoopKitViewModel, startsServices: Bool = true) {
+  init(
+    model: LoopKitViewModel,
+    updateModel: LoopKitUpdateViewModel,
+    startsServices: Bool = true
+  ) {
     self.model = model
+    self.updateModel = updateModel
     self.startsServices = startsServices
   }
 
@@ -34,6 +41,11 @@ struct MenuBarControllerView: View {
     .foregroundStyle(LoopKitTheme.text)
     .preferredColorScheme(.dark)
     .onAppear {
+      let persistedSetupComplete = UserDefaults.standard.bool(
+        forKey: "LoopKitFirstRunSetupComplete"
+      )
+      updateModel.restoreCachedAvailability(setupComplete: persistedSetupComplete)
+      updateModel.checkAutomaticallyIfEligible(setupComplete: persistedSetupComplete)
       guard startsServices else { return }
       model.onAppear()
     }
@@ -229,28 +241,50 @@ struct MenuBarControllerView: View {
   }
 
   private var footer: some View {
-    HStack(spacing: 8) {
-      Circle()
-        .fill(model.connection == .connected ? LoopKitTheme.signal : LoopKitTheme.error)
-        .frame(width: 6, height: 6)
-      Text(engineSummary)
-        .font(LoopKitTheme.mono(9))
-        .foregroundStyle(LoopKitTheme.secondaryText)
-      Spacer()
-      Button("Setup…") {
-        setupComplete = false
-        openDashboard()
-      }
-      .buttonStyle(.plain)
-      .font(.system(size: 12, weight: .medium))
-      .foregroundStyle(LoopKitTheme.secondaryText)
-      Button("Open Dashboard") { openDashboard() }
+    VStack(spacing: 7) {
+      if let release = updateModel.availableRelease {
+        Button {
+          openDashboard()
+          updateModel.presentAvailableUpdate()
+        } label: {
+          HStack {
+            Image(systemName: "arrow.down.circle.fill")
+            Text("Update available")
+            Spacer()
+            Text(release.version?.description ?? release.tagName)
+              .font(LoopKitTheme.mono(9, weight: .semibold))
+          }
+          .foregroundStyle(LoopKitTheme.teal)
+          .contentShape(Rectangle())
+        }
         .buttonStyle(.plain)
-        .font(.system(size: 12, weight: .semibold))
-        .foregroundStyle(LoopKitTheme.teal)
+        .accessibilityLabel("Update available, version \(release.version?.description ?? release.tagName)")
+        .help("Open the dashboard to review this release")
+      }
+
+      HStack(spacing: 8) {
+        Circle()
+          .fill(model.connection == .connected ? LoopKitTheme.signal : LoopKitTheme.error)
+          .frame(width: 6, height: 6)
+        Text(engineSummary)
+          .font(LoopKitTheme.mono(9))
+          .foregroundStyle(LoopKitTheme.secondaryText)
+        Spacer()
+        Button("Setup…") {
+          setupComplete = false
+          openDashboard()
+        }
+        .buttonStyle(.plain)
+        .font(.system(size: 12, weight: .medium))
+        .foregroundStyle(LoopKitTheme.secondaryText)
+        Button("Open Dashboard") { openDashboard() }
+          .buttonStyle(.plain)
+          .font(.system(size: 12, weight: .semibold))
+          .foregroundStyle(LoopKitTheme.teal)
+      }
     }
     .padding(.horizontal, 18)
-    .frame(height: 48)
+    .frame(height: updateModel.availableRelease == nil ? 48 : 72)
     .background(LoopKitTheme.surface.opacity(0.55))
   }
 
@@ -351,6 +385,10 @@ private struct MenuCaptureRow: View {
 
 #if DEBUG
 #Preview("Menu Bar Controller") {
-  MenuBarControllerView(model: .demoModel(), startsServices: false)
+  MenuBarControllerView(
+    model: .demoModel(),
+    updateModel: .previewAvailable(),
+    startsServices: false
+  )
 }
 #endif

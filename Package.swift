@@ -12,6 +12,7 @@ let package = Package(
         .library(name: "LoopKitAudioCore", targets: ["LoopKitAudioCore"]),
         .library(name: "LoopKitDaemonCore", targets: ["LoopKitDaemonCore"]),
         .library(name: "LoopKitUI", targets: ["LoopKitUI"]),
+        .library(name: "LoopKitUpdate", targets: ["LoopKitUpdate"]),
         .library(name: "LoopKitOffline", targets: ["LoopKitOffline"]),
         .executable(name: "loopkit_offline_dsp", targets: ["loopkit_offline_dsp"])
     ],
@@ -57,6 +58,10 @@ let package = Package(
             path: "macos/LoopKitUI"
         ),
         .target(
+            name: "LoopKitUpdate",
+            path: "macos/Update/Sources"
+        ),
+        .target(
             name: "LoopKitOffline",
             dependencies: ["LoopKitEngine"],
             path: "tools/loopkit_offline_dsp/Sources/LoopKitOffline",
@@ -80,6 +85,7 @@ let package = Package(
                 "LoopKitAudioCore",
                 "LoopKitEngine",
                 "LoopKitUI",
+                "LoopKitUpdate",
                 "LoopKitOffline"
             ],
             path: "Tests/LoopKitTests",
