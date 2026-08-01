@@ -48,6 +48,7 @@ context:
 - `macos/Update/Sources/LoopKitVersion.swift` -- strict SemVer parsing and comparison.
 - `macos/Update/Sources/GitHubRelease.swift` -- eligible release DTO and defensive decoding.
 - `macos/Update/Sources/UpdateCheckService.swift` -- injected fetching/time, in-flight deduplication, result classification, and cadence policy.
+- `macos/Update/Sources/UpdateCheckState.swift` -- explicit request priority, presentation transitions, and cache-generation arbitration.
 - `macos/Update/Sources/UpdateCheckPersistence.swift` -- narrow cache protocol and production UserDefaults store.
 - `macos/ControlApp/project.yml` -- link `LoopKitUpdate` into the generated ControlApp project.
 - `macos/ControlApp/Sources/LoopKitUpdateViewModel.swift` -- app-scoped observable adapter, installed-version provider, cache-race protection, and manual/background presentation policy.
@@ -109,7 +110,10 @@ Production checks call `https://api.github.com/repos/twoplustwoone/loop-kit/rele
 **Release trust and scheduling**
 
 - Review cadence enforcement, in-flight deduplication, caching, and result classification together.
-  [`UpdateCheckService.swift:113`](../../macos/Update/Sources/UpdateCheckService.swift#L113)
+  [`UpdateCheckService.swift:99`](../../macos/Update/Sources/UpdateCheckService.swift#L99)
+
+- Trace explicit manual priority and last-known-good cache arbitration.
+  [`UpdateCheckState.swift:20`](../../macos/Update/Sources/UpdateCheckState.swift#L20)
 
 - Inspect the concrete GitHub request and defensive HTTP/decoding boundary.
   [`UpdateCheckService.swift:32`](../../macos/Update/Sources/UpdateCheckService.swift#L32)
@@ -134,7 +138,7 @@ Production checks call `https://api.github.com/repos/twoplustwoone/loop-kit/rele
 **Verification and integration**
 
 - Begin tests at the production HTTP boundary, then continue through cadence and concurrency cases.
-  [`LoopKitUpdateTests.swift:86`](../../Tests/LoopKitTests/LoopKitUpdateTests.swift#L86)
+  [`LoopKitUpdateTests.swift:190`](../../Tests/LoopKitTests/LoopKitUpdateTests.swift#L190)
 
 - Verify SwiftPM exposes the hardware-independent module to app and tests.
   [`Package.swift:15`](../../Package.swift#L15)

@@ -28,6 +28,110 @@ final class LoopKitUpdateTests: XCTestCase {
     XCTAssertEqual(version("v2.4.6"), version("2.4.6"))
   }
 
+  func testManualCheckKeepsVisibleResultWhenAutomaticTriggerJoins() {
+    let available = release("2.0.0")
+    var state = LoopKitUpdateStateMachine()
+
+    guard case .started(let checkID, .manual) = state.beginCheck(trigger: .manual) else {
+      return XCTFail("Expected the manual check to start")
+    }
+    XCTAssertEqual(state.presentation, .checking)
+    XCTAssertEqual(
+      state.beginCheck(trigger: .automatic(setupComplete: true)),
+      .joined(recordAutomaticAttempt: true)
+    )
+
+    let completion = state.completeCheck(
+      id: checkID,
+      result: .available(installed: version("1.0.0"), release: available)
+    )
+    XCTAssertEqual(completion, .finished)
+    XCTAssertEqual(
+      state.presentation,
+      .available(installedVersion: "1.0.0", release: available)
+    )
+  }
+
+  func testSetupIncompleteAutomaticTriggerDoesNotRecordJoinedAttempt() {
+    var state = LoopKitUpdateStateMachine()
+    guard case .started(_, .manual) = state.beginCheck(trigger: .manual) else {
+      return XCTFail("Expected the manual check to start")
+    }
+
+    XCTAssertEqual(
+      state.beginCheck(trigger: .automatic(setupComplete: false)),
+      .joined(recordAutomaticAttempt: false)
+    )
+  }
+
+  func testManualTriggerPromotesAnAutomaticCheckToVisibleResult() {
+    let available = release("2.0.0")
+    var state = LoopKitUpdateStateMachine()
+
+    guard case .started(let checkID, .automatic(setupComplete: true)) = state.beginCheck(
+      trigger: .automatic(setupComplete: true)
+    ) else {
+      return XCTFail("Expected the automatic check to start")
+    }
+    XCTAssertEqual(state.beginCheck(trigger: .manual), .joined(recordAutomaticAttempt: false))
+    XCTAssertEqual(state.presentation, .checking)
+
+    _ = state.completeCheck(
+      id: checkID,
+      result: .available(installed: version("1.0.0"), release: available)
+    )
+    XCTAssertEqual(
+      state.presentation,
+      .available(installedVersion: "1.0.0", release: available)
+    )
+  }
+
+  func testAutomaticFailurePreservesCachedAvailabilityAcrossRestoreOrdering() {
+    let cached = release("2.0.0")
+
+    var cacheFirst = LoopKitUpdateStateMachine()
+    let firstGeneration = cacheFirst.cacheRestoreGeneration
+    cacheFirst.restoreCachedAvailability(cached, generation: firstGeneration)
+    guard case .started(let firstCheckID, _) = cacheFirst.beginCheck(
+      trigger: .automatic(setupComplete: true)
+    ) else {
+      return XCTFail("Expected the first automatic check to start")
+    }
+    _ = cacheFirst.completeCheck(id: firstCheckID, result: .failed(.httpStatus(429)))
+    XCTAssertEqual(cacheFirst.availableRelease, cached)
+    XCTAssertNil(cacheFirst.presentation)
+
+    var failureFirst = LoopKitUpdateStateMachine()
+    let secondGeneration = failureFirst.cacheRestoreGeneration
+    guard case .started(let secondCheckID, _) = failureFirst.beginCheck(
+      trigger: .automatic(setupComplete: true)
+    ) else {
+      return XCTFail("Expected the second automatic check to start")
+    }
+    _ = failureFirst.completeCheck(id: secondCheckID, result: .failed(.httpStatus(429)))
+    failureFirst.restoreCachedAvailability(cached, generation: secondGeneration)
+    XCTAssertEqual(failureFirst.availableRelease, cached)
+    XCTAssertNil(failureFirst.presentation)
+  }
+
+  func testSuccessfulCurrentResultRejectsLateCachedAvailability() {
+    let cached = release("2.0.0")
+    var state = LoopKitUpdateStateMachine()
+    let staleGeneration = state.cacheRestoreGeneration
+
+    guard case .started(let checkID, _) = state.beginCheck(
+      trigger: .automatic(setupComplete: true)
+    ) else {
+      return XCTFail("Expected the automatic check to start")
+    }
+    _ = state.completeCheck(
+      id: checkID,
+      result: .current(installed: version("2.0.0"), latest: version("2.0.0"))
+    )
+    state.restoreCachedAvailability(cached, generation: staleGeneration)
+    XCTAssertNil(state.availableRelease)
+  }
+
   func testGitHubReleaseDecodingAndEligibility() throws {
     let data = Data(#"""
     {
@@ -313,6 +417,24 @@ final class LoopKitUpdateTests: XCTestCase {
     XCTAssertEqual(failureCallCount, 2)
   }
 
+  func testJoinedAutomaticTriggerCanRecordCadenceWithoutFetching() async {
+    let now = Date(timeIntervalSince1970: 3_500_000)
+    let fetcher = TestReleaseFetcher(result: .success(release("1.2.0")))
+    let persistence = TestUpdatePersistence()
+    let service = LoopKitUpdateCheckService(
+      fetcher: fetcher,
+      persistence: persistence,
+      now: { now }
+    )
+
+    await service.recordAutomaticAttemptIfEligible(setupComplete: true)
+
+    let recordedAttempt = await persistence.lastAutomaticAttempt()
+    let callCount = await fetcher.callCount()
+    XCTAssertEqual(recordedAttempt, now)
+    XCTAssertEqual(callCount, 0)
+  }
+
   func testConcurrentManualAndAutomaticChecksShareOneFetch() async {
     let fetcher = TestReleaseFetcher(
       result: .success(release("1.2.0")),
@@ -335,15 +457,6 @@ final class LoopKitUpdateTests: XCTestCase {
     XCTAssertEqual(automaticResult, manualResult)
     let concurrentCallCount = await fetcher.callCount()
     XCTAssertEqual(concurrentCallCount, 1)
-    XCTAssertTrue(
-      LoopKitUpdatePresentationPolicy.shouldPresent(result: manualResult!, trigger: .manual)
-    )
-    XCTAssertFalse(
-      LoopKitUpdatePresentationPolicy.shouldPresent(
-        result: automaticResult!,
-        trigger: .automatic(setupComplete: true)
-      )
-    )
   }
 
   func testManualCheckRetriesWhenJoinedAutomaticCheckIsCadenceSuppressed() async {

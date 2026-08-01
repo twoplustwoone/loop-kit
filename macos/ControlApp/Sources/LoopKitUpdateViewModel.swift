@@ -5,12 +5,7 @@ import SwiftUI
 
 @MainActor
 final class LoopKitUpdateViewModel: ObservableObject {
-  enum Presentation: Equatable {
-    case checking
-    case current(installedVersion: String)
-    case available(installedVersion: String, release: GitHubRelease)
-    case failed(message: String)
-  }
+  typealias Presentation = LoopKitUpdatePresentation
 
   @Published private(set) var availableRelease: GitHubRelease?
   @Published private(set) var presentation: Presentation?
@@ -20,7 +15,7 @@ final class LoopKitUpdateViewModel: ObservableObject {
   private let service: LoopKitUpdateCheckService?
   private let openURL: (URL) -> Bool
   private var hasRestoredCache = false
-  private var stateRevision = 0
+  private var stateMachine: LoopKitUpdateStateMachine
 
   init(
     service: LoopKitUpdateCheckService = LoopKitUpdateCheckService(
@@ -35,6 +30,9 @@ final class LoopKitUpdateViewModel: ObservableObject {
     self.service = service
     self.installedVersion = installedVersion
     self.openURL = openURL
+    stateMachine = LoopKitUpdateStateMachine()
+    availableRelease = stateMachine.availableRelease
+    presentation = stateMachine.presentation
   }
 
   private init(
@@ -44,8 +42,12 @@ final class LoopKitUpdateViewModel: ObservableObject {
   ) {
     service = nil
     self.installedVersion = installedVersion
-    self.availableRelease = availableRelease
-    self.presentation = presentation
+    stateMachine = LoopKitUpdateStateMachine(
+      availableRelease: availableRelease,
+      presentation: presentation
+    )
+    self.availableRelease = stateMachine.availableRelease
+    self.presentation = stateMachine.presentation
     openURL = { _ in false }
     hasRestoredCache = true
   }
@@ -53,102 +55,71 @@ final class LoopKitUpdateViewModel: ObservableObject {
   func restoreCachedAvailability(setupComplete: Bool) {
     guard setupComplete, !hasRestoredCache, let service else { return }
     hasRestoredCache = true
-    let revision = stateRevision
+    let generation = stateMachine.cacheRestoreGeneration
     Task {
       let release = await service.cachedAvailability(installedVersion: installedVersion)
-      guard revision == stateRevision else { return }
-      availableRelease = release
+      stateMachine.restoreCachedAvailability(release, generation: generation)
+      publishState()
     }
   }
 
   func checkAutomaticallyIfEligible(setupComplete: Bool) {
-    guard let service else { return }
-    stateRevision += 1
-    let revision = stateRevision
-    let trigger = LoopKitUpdateCheckTrigger.automatic(setupComplete: setupComplete)
-    Task {
-      guard let result = await service.check(
-        installedVersion: installedVersion,
-        trigger: trigger
-      ) else {
-        guard revision == stateRevision, setupComplete else { return }
-        availableRelease = await service.cachedAvailability(installedVersion: installedVersion)
-        return
-      }
-      guard revision == stateRevision else { return }
-      apply(result, trigger: trigger)
-    }
+    beginCheck(trigger: .automatic(setupComplete: setupComplete))
   }
 
   func checkManually() {
-    guard let service else { return }
-    stateRevision += 1
-    let revision = stateRevision
-    presentation = .checking
-    Task {
-      guard let result = await service.check(
-        installedVersion: installedVersion,
-        trigger: .manual
-      ) else {
-        presentation = .failed(message: "The update check did not complete. Please try again.")
-        return
-      }
-      guard revision == stateRevision else { return }
-      apply(result, trigger: .manual)
-    }
+    beginCheck(trigger: .manual)
   }
 
   func presentAvailableUpdate() {
-    guard let availableRelease else { return }
-    presentation = .available(
-      installedVersion: installedVersion,
-      release: availableRelease
-    )
+    stateMachine.presentAvailableUpdate(installedVersion: installedVersion)
+    publishState()
   }
 
   func dismissPresentation() {
-    presentation = nil
+    stateMachine.dismissPresentation()
+    publishState()
   }
 
   func viewRelease(_ release: GitHubRelease) {
     guard release.isEligible else { return }
     guard openURL(release.releaseURL) else {
-      presentation = .failed(
-        message: "LoopKit could not open the release page. Check your default browser and try again."
-      )
+      stateMachine.reportReleaseOpenFailure()
+      publishState()
       return
     }
   }
 
-  private func apply(
-    _ result: LoopKitUpdateCheckResult,
-    trigger: LoopKitUpdateCheckTrigger
-  ) {
-    let presentResult = LoopKitUpdatePresentationPolicy.shouldPresent(
-      result: result,
-      trigger: trigger
-    )
-    switch result {
-    case .available(let installed, let release):
-      availableRelease = release
-      if presentResult {
-        presentation = .available(
-          installedVersion: installed.description,
-          release: release
-        )
+  private func beginCheck(trigger: LoopKitUpdateCheckTrigger) {
+    guard let service else { return }
+    switch stateMachine.beginCheck(trigger: trigger) {
+    case .joined(let recordAutomaticAttempt):
+      publishState()
+      if recordAutomaticAttempt {
+        Task {
+          await service.recordAutomaticAttemptIfEligible(setupComplete: true)
+        }
       }
-    case .current(let installed, _):
-      availableRelease = nil
-      if presentResult {
-        presentation = .current(installedVersion: installed.description)
-      }
-    case .failed(let error):
-      if presentResult {
-        presentation = .failed(
-          message: error.errorDescription ?? "The update check could not complete."
+
+    case .started(let checkID, let serviceTrigger):
+      publishState()
+      Task {
+        let result = await service.check(
+          installedVersion: installedVersion,
+          trigger: serviceTrigger
         )
+        let completion = stateMachine.completeCheck(id: checkID, result: result)
+        publishState()
+        if completion == .retryManually {
+          beginCheck(trigger: .manual)
+        }
       }
     }
+  }
+
+  private func publishState() {
+    availableRelease = stateMachine.availableRelease
+    presentation = stateMachine.presentation
   }
 }
 

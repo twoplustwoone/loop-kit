@@ -75,7 +75,7 @@ public actor GitHubReleaseClient: LoopKitReleaseFetching {
   }
 }
 
-public enum LoopKitUpdateCheckTrigger: Sendable {
+public enum LoopKitUpdateCheckTrigger: Equatable, Sendable {
   case automatic(setupComplete: Bool)
   case manual
 
@@ -93,20 +93,6 @@ public enum LoopKitUpdateCheckResult: Equatable, Sendable {
   public var availableRelease: GitHubRelease? {
     if case .available(_, let release) = self { return release }
     return nil
-  }
-}
-
-public enum LoopKitUpdatePresentationPolicy {
-  public static func shouldPresent(
-    result: LoopKitUpdateCheckResult,
-    trigger: LoopKitUpdateCheckTrigger
-  ) -> Bool {
-    switch trigger {
-    case .manual:
-      return true
-    case .automatic:
-      return false
-    }
   }
 }
 
@@ -145,6 +131,13 @@ public actor LoopKitUpdateCheckService {
     return release
   }
 
+  public func recordAutomaticAttemptIfEligible(setupComplete: Bool) async {
+    guard setupComplete else { return }
+    let checkDate = now()
+    guard await automaticAttemptIsDue(at: checkDate) else { return }
+    await persistence.setLastAutomaticAttempt(checkDate)
+  }
+
   public func check(
     installedVersion rawInstalledVersion: String,
     trigger: LoopKitUpdateCheckTrigger
@@ -169,10 +162,7 @@ public actor LoopKitUpdateCheckService {
     let checkDate = now()
     let task = Task<LoopKitUpdateCheckResult?, Never> {
       if trigger.isAutomatic {
-        if let lastAttempt = await persistence.lastAutomaticAttempt(),
-           checkDate.timeIntervalSince(lastAttempt) < Self.automaticInterval {
-          return nil
-        }
+        guard await automaticAttemptIsDue(at: checkDate) else { return nil }
         await persistence.setLastAutomaticAttempt(checkDate)
       }
 
@@ -203,5 +193,10 @@ public actor LoopKitUpdateCheckService {
       inFlight = nil
     }
     return result
+  }
+
+  private func automaticAttemptIsDue(at checkDate: Date) async -> Bool {
+    guard let lastAttempt = await persistence.lastAutomaticAttempt() else { return true }
+    return checkDate.timeIntervalSince(lastAttempt) >= Self.automaticInterval
   }
 }
