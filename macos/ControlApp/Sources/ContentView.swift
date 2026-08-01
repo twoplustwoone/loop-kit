@@ -127,14 +127,14 @@ private struct DashboardTopBar: View {
       .help(sourceControlsExpanded ? "Hide Source controls" : "Show Source controls")
 
       Button {
-        model.retryConnection()
+        model.refreshSetup()
       } label: {
         Image(systemName: "arrow.clockwise")
           .frame(width: 30, height: 30)
       }
       .buttonStyle(.plain)
       .foregroundStyle(LoopKitTheme.secondaryText)
-      .help("Reconnect to loopkitd")
+      .help("Refresh LoopKit status")
 
       Button(action: onShowSetup) {
         Label("Setup", systemImage: "questionmark.circle")

@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import LoopKitIPC
+import LoopKitUI
 
 /// @MainActor so all @Published writes happen on the main thread and we can
 /// safely read state from SwiftUI without ceremony.
@@ -194,6 +195,35 @@ final class LoopKitViewModel: ObservableObject {
     startAudioService(retryLegacyMigration: legacyMigrationError != nil)
   }
 
+  func refreshSetup() {
+    let serviceConnected: Bool
+    let serviceConnecting: Bool
+    switch connection {
+    case .connected:
+      serviceConnected = true
+      serviceConnecting = false
+    case .connecting:
+      serviceConnected = false
+      serviceConnecting = true
+    case .disconnected:
+      serviceConnected = false
+      serviceConnecting = false
+    }
+
+    switch LoopKitSetupPresentation.refreshAction(
+      serviceConnected: serviceConnected,
+      serviceConnecting: serviceConnecting,
+      legacyMigrationFailed: legacyMigrationError != nil
+    ) {
+    case .reloadData:
+      Task { await reloadSetupData() }
+    case .wait:
+      break
+    case .restartService(let retryLegacyMigration):
+      startAudioService(retryLegacyMigration: retryLegacyMigration)
+    }
+  }
+
   func openLoginItemsSettings() {
     legacyAgentMigrator.openLoginItemsSettings()
   }
@@ -331,6 +361,17 @@ final class LoopKitViewModel: ObservableObject {
 
   private func reloadScenes() async {
     scenes = await daemon.listScenes()
+  }
+
+  private func reloadSetupData() async {
+    await reloadDevices()
+    await reloadInputDevices()
+    await reloadCaptureApps()
+    await reloadSources()
+    await reloadRoutes()
+    await reloadScenes()
+    foregroundMicrophonePermission = microphoneAuthorization.state
+    await refreshStatus()
   }
 
   private func refreshStatus() async {

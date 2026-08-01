@@ -85,6 +85,33 @@ final class LoopKitTests: XCTestCase {
         )
     }
 
+    func testSetupRefreshDoesNotRestartHealthyAudioService() {
+        XCTAssertEqual(
+            LoopKitSetupPresentation.refreshAction(
+                serviceConnected: true,
+                serviceConnecting: false,
+                legacyMigrationFailed: false
+            ),
+            .reloadData
+        )
+        XCTAssertEqual(
+            LoopKitSetupPresentation.refreshAction(
+                serviceConnected: false,
+                serviceConnecting: true,
+                legacyMigrationFailed: false
+            ),
+            .wait
+        )
+        XCTAssertEqual(
+            LoopKitSetupPresentation.refreshAction(
+                serviceConnected: false,
+                serviceConnecting: false,
+                legacyMigrationFailed: true
+            ),
+            .restartService(retryLegacyMigration: true)
+        )
+    }
+
     func testLegacyAgentMigrationPolicy() {
         XCTAssertEqual(
             LoopKitLegacyAgentMigrationPolicy.action(for: .enabled),

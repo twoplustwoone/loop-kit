@@ -1,6 +1,12 @@
 import Foundation
 
 public enum LoopKitSetupPresentation {
+  public enum RefreshAction: Equatable {
+    case reloadData
+    case wait
+    case restartService(retryLegacyMigration: Bool)
+  }
+
   public enum State: Equatable {
     case ready
     case information
@@ -94,6 +100,22 @@ public enum LoopKitSetupPresentation {
       detail: "Starting the Process Tap. Approve macOS system-audio recording if prompted.",
       state: .warning
     )
+  }
+
+  /// A routine refresh must not tear down a healthy audio service. Reconnection
+  /// is recovery behavior reserved for an actual connection or migration fault.
+  public static func refreshAction(
+    serviceConnected: Bool,
+    serviceConnecting: Bool,
+    legacyMigrationFailed: Bool
+  ) -> RefreshAction {
+    if serviceConnected {
+      return .reloadData
+    }
+    if serviceConnecting {
+      return .wait
+    }
+    return .restartService(retryLegacyMigration: legacyMigrationFailed)
   }
 }
 

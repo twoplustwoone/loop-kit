@@ -39,7 +39,7 @@ struct FirstRunSetupView: View {
           ) {
             HStack {
               Link("Official BlackHole download", destination: URL(string: "https://existential.audio/blackhole/")!)
-              Button("Refresh") { model.retryConnection() }
+              Button("Refresh") { model.refreshSetup() }
             }
             .buttonStyle(.bordered)
           }
